@@ -437,6 +437,72 @@ app.get('/api/views/shortform', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Debug endpoint â raw YouTube Analytics API response
+// ---------------------------------------------------------------------------
+
+app.get('/api/debug/rawviews', async (req, res) => {
+  const allTokens = loadTokens();
+  if (Object.keys(allTokens).length === 0) {
+    return res.json({ error: 'No channels connected' });
+  }
+
+  const results = [];
+  for (const [channelId, data] of Object.entries(allTokens)) {
+    const oauth2Client = makeOAuth2Client();
+    oauth2Client.setCredentials(data.tokens);
+
+    try {
+      const ytAnalytics = google.youtubeAnalytics({
+        version: 'v2',
+        auth: oauth2Client,
+      });
+
+      // Try with creatorContentType dimension
+      const report1 = await ytAnalytics.reports.query({
+        ids: `channel==${channelId}`,
+        startDate: '2025-03-01',
+        endDate: '2025-03-29',
+        metrics: 'views',
+        dimensions: 'day,creatorContentType',
+        sort: 'day',
+      });
+
+      // Also try plain views for comparison
+      const report2 = await ytAnalytics.reports.query({
+        ids: `channel==${channelId}`,
+        startDate: '2025-03-01',
+        endDate: '2025-03-29',
+        metrics: 'views',
+        dimensions: 'day',
+        sort: 'day',
+      });
+
+      results.push({
+        channel: data.channelTitle,
+        withContentType: {
+          columnHeaders: report1.data.columnHeaders,
+          rowCount: (report1.data.rows || []).length,
+          sampleRows: (report1.data.rows || []).slice(0, 10),
+        },
+        plainViews: {
+          columnHeaders: report2.data.columnHeaders,
+          rowCount: (report2.data.rows || []).length,
+          sampleRows: (report2.data.rows || []).slice(0, 5),
+        },
+      });
+    } catch (err) {
+      results.push({
+        channel: data.channelTitle,
+        error: err.message,
+        errorDetails: err.response ? err.response.data : null,
+      });
+    }
+  }
+
+  res.json(results);
+});
+
+// ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
 
