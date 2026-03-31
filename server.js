@@ -274,16 +274,19 @@ app.delete('/api/channels/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/revenue', async (req, res) => {
-  const startDate = req.query.startDate || '2024-01-01';
-  const endDate = req.query.endDate || new Date().toISOString().slice(0, 10);
+// ---------------------------------------------------------------------------
+// Shared helper â fetches analytics for all channels
+// ---------------------------------------------------------------------------
+
+async function fetchAnalyticsForAllChannels({ startDate, endDate, metrics, dimensions, sort, currency, filters }) {
   const allTokens = loadTokens();
 
   if (Object.keys(allTokens).length === 0) {
-    return res.json({ channels: [], totals: [] });
+    return { channels: [], totals: [] };
   }
 
   const results = [];
+  const valueKey = metrics === 'estimatedRevenue' ? 'revenue' : 'views';
 
   for (const [channelId, data] of Object.entries(allTokens)) {
     const oauth2Client = makeOAuth2Client();
@@ -303,19 +306,22 @@ app.get('/api/revenue', async (req, res) => {
         auth: oauth2Client,
       });
 
-      const report = await ytAnalytics.reports.query({
+      const queryParams = {
         ids: `channel==${channelId}`,
         startDate,
         endDate,
-        metrics: 'estimatedRevenue',
-        dimensions: 'day',
-        sort: 'day',
-        currency: 'SEK',
-      });
+        metrics,
+        dimensions: dimensions || 'day',
+        sort: sort || 'day',
+      };
+      if (currency) queryParams.currency = currency;
+      if (filters) queryParams.filters = filters;
+
+      const report = await ytAnalytics.reports.query(queryParams);
 
       const rows = (report.data.rows || []).map((r) => ({
         date: r[0],
-        revenue: r[1],
+        [valueKey]: r[1],
       }));
 
       results.push({
@@ -325,8 +331,8 @@ app.get('/api/revenue', async (req, res) => {
         data: rows,
       });
     } catch (err) {
-      console.error(`Error fetching revenue for ${data.channelTitle}:`, err.message);
-      if (err.response) console.error('Revenue error details:', err.response.status, JSON.stringify(err.response.data));
+      console.error(`Error fetching ${metrics} for ${data.channelTitle}:`, err.message);
+      if (err.response) console.error('Error details:', err.response.status, JSON.stringify(err.response.data));
       console.error('Token scopes:', data.tokens.scope);
       results.push({
         channelId,
@@ -338,17 +344,78 @@ app.get('/api/revenue', async (req, res) => {
     }
   }
 
+  // Aggregate totals by day
   const dayMap = {};
   for (const ch of results) {
     for (const row of ch.data) {
-      dayMap[row.date] = (dayMap[row.date] || 0) + row.revenue;
+      dayMap[row.date] = (dayMap[row.date] || 0) + row[valueKey];
     }
   }
   const totals = Object.entries(dayMap)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, revenue]) => ({ date, revenue }));
+    .map(([date, value]) => ({ date, [valueKey]: value }));
 
-  res.json({ channels: results, totals });
+  return { channels: results, totals };
+}
+
+// ---------------------------------------------------------------------------
+// Revenue endpoint
+// ---------------------------------------------------------------------------
+
+app.get('/api/revenue', async (req, res) => {
+  const startDate = req.query.startDate || '2024-01-01';
+  const endDate = req.query.endDate || new Date().toISOString().slice(0, 10);
+
+  const result = await fetchAnalyticsForAllChannels({
+    startDate,
+    endDate,
+    metrics: 'estimatedRevenue',
+    dimensions: 'day',
+    sort: 'day',
+    currency: 'SEK',
+  });
+
+  res.json(result);
+});
+
+// ---------------------------------------------------------------------------
+// Long-form views endpoint (VIDEO_ON_DEMAND)
+// ---------------------------------------------------------------------------
+
+app.get('/api/views/longform', async (req, res) => {
+  const startDate = req.query.startDate || '2024-01-01';
+  const endDate = req.query.endDate || new Date().toISOString().slice(0, 10);
+
+  const result = await fetchAnalyticsForAllChannels({
+    startDate,
+    endDate,
+    metrics: 'views',
+    dimensions: 'day',
+    sort: 'day',
+    filters: 'creatorContentType==VIDEO_ON_DEMAND',
+  });
+
+  res.json(result);
+});
+
+// ---------------------------------------------------------------------------
+// Short-form views endpoint (SHORTS)
+// ---------------------------------------------------------------------------
+
+app.get('/api/views/shortform', async (req, res) => {
+  const startDate = req.query.startDate || '2024-01-01';
+  const endDate = req.query.endDate || new Date().toISOString().slice(0, 10);
+
+  const result = await fetchAnalyticsForAllChannels({
+    startDate,
+    endDate,
+    metrics: 'views',
+    dimensions: 'day',
+    sort: 'day',
+    filters: 'creatorContentType==SHORTS',
+  });
+
+  res.json(result);
 });
 
 // ---------------------------------------------------------------------------
