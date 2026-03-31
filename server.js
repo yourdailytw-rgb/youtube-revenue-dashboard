@@ -278,7 +278,7 @@ app.delete('/api/channels/:id', (req, res) => {
 // Shared helper â fetches analytics for all channels
 // ---------------------------------------------------------------------------
 
-async function fetchAnalyticsForAllChannels({ startDate, endDate, metrics, dimensions, sort, currency, filters }) {
+async function fetchAnalyticsForAllChannels({ startDate, endDate, metrics, dimensions, sort, currency, filters, contentTypeFilter }) {
   const allTokens = loadTokens();
 
   if (Object.keys(allTokens).length === 0) {
@@ -319,10 +319,28 @@ async function fetchAnalyticsForAllChannels({ startDate, endDate, metrics, dimen
 
       const report = await ytAnalytics.reports.query(queryParams);
 
-      const rows = (report.data.rows || []).map((r) => ({
-        date: r[0],
-        [valueKey]: r[1],
-      }));
+      let rows;
+      if (contentTypeFilter) {
+        // When using 'day,creatorContentType' dimensions, rows are [date, contentType, value]
+        // Filter by the requested content type and aggregate by day
+        const dayMap = {};
+        for (const r of (report.data.rows || [])) {
+          const date = r[0];
+          const cType = r[1];
+          const val = r[2];
+          if (cType === contentTypeFilter) {
+            dayMap[date] = (dayMap[date] || 0) + val;
+          }
+        }
+        rows = Object.entries(dayMap)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([date, val]) => ({ date, [valueKey]: val }));
+      } else {
+        rows = (report.data.rows || []).map((r) => ({
+          date: r[0],
+          [valueKey]: r[1],
+        }));
+      }
 
       results.push({
         channelId,
@@ -390,9 +408,9 @@ app.get('/api/views/longform', async (req, res) => {
     startDate,
     endDate,
     metrics: 'views',
-    dimensions: 'day',
+    dimensions: 'day,creatorContentType',
     sort: 'day',
-    filters: 'creatorContentType==VIDEO_ON_DEMAND',
+    contentTypeFilter: 'VIDEO_ON_DEMAND',
   });
 
   res.json(result);
@@ -410,9 +428,9 @@ app.get('/api/views/shortform', async (req, res) => {
     startDate,
     endDate,
     metrics: 'views',
-    dimensions: 'day',
+    dimensions: 'day,creatorContentType',
     sort: 'day',
-    filters: 'creatorContentType==SHORTS',
+    contentTypeFilter: 'SHORTS',
   });
 
   res.json(result);
