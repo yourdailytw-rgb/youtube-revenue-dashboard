@@ -39,7 +39,6 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    /* Header */
     header {
       background: var(--card);
       border-bottom: 1px solid var(--border);
@@ -73,7 +72,7 @@
       align-items: center;
       gap: 5px;
     }
-    .delay-badge::before { content: 'â±'; font-size: 12px; }
+    .delay-badge::before { content: '\u23F1'; font-size: 12px; }
 
     .btn {
       background: var(--accent);
@@ -106,7 +105,6 @@
 
     .container { max-width: 1340px; margin: 0 auto; padding: 20px 24px; }
 
-    /* Channels strip */
     .channels-strip {
       display: flex;
       gap: 8px;
@@ -136,7 +134,6 @@
     }
     .channel-chip .remove:hover { color: var(--red); }
 
-    /* Stats Overview */
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -191,7 +188,6 @@
     .stat-card .change.up { color: var(--green); background: var(--green-dim); }
     .stat-card .change.down { color: var(--red); background: var(--red-dim); }
 
-    /* Controls bar */
     .controls-bar {
       display: flex;
       gap: 10px;
@@ -221,7 +217,35 @@
     .date-group input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); }
     .preset-btns { display: flex; gap: 4px; }
 
-    /* Tabs for chart sections */
+    /* Main section tabs (Revenue / Long Form / Short Form) */
+    .main-tabs {
+      display: flex;
+      gap: 2px;
+      margin-bottom: 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 3px;
+      width: fit-content;
+    }
+    .main-tab {
+      padding: 8px 20px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-dim);
+      background: transparent;
+      border: none;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .main-tab:hover { color: var(--text-secondary); }
+    .main-tab.active { background: rgba(255,255,255,0.08); color: var(--text); }
+    .main-tab.revenue-tab.active { color: var(--accent); background: var(--accent-glow); }
+    .main-tab.longform-tab.active { color: var(--blue); background: rgba(59, 130, 246, 0.12); }
+    .main-tab.shortform-tab.active { color: var(--orange); background: rgba(245, 158, 11, 0.12); }
+
+    /* Sub-tabs (Overview / By Channel / Daily Log) */
     .section-tabs {
       display: flex;
       gap: 2px;
@@ -246,7 +270,6 @@
     .section-tab:hover { color: var(--text-secondary); }
     .section-tab.active { background: rgba(255,255,255,0.08); color: var(--text); }
 
-    /* Chart cards */
     .chart-card {
       background: var(--card);
       border: 1px solid var(--border);
@@ -263,7 +286,6 @@
     }
     .chart-container { position: relative; height: 320px; }
 
-    /* Channel breakdown table */
     .channel-breakdown {
       background: var(--card);
       border: 1px solid var(--border);
@@ -277,10 +299,7 @@
       margin-bottom: 16px;
       color: var(--text-secondary);
     }
-    .breakdown-table {
-      width: 100%;
-      border-collapse: collapse;
-    }
+    .breakdown-table { width: 100%; border-collapse: collapse; }
     .breakdown-table th {
       text-align: left;
       font-size: 11px;
@@ -304,11 +323,7 @@
       align-items: center;
       gap: 10px;
     }
-    .breakdown-table .channel-name img {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-    }
+    .breakdown-table .channel-name img { width: 28px; height: 28px; border-radius: 50%; }
     .breakdown-table .channel-name .color-dot {
       width: 8px;
       height: 8px;
@@ -324,14 +339,12 @@
     .revenue-value { font-weight: 500; }
     .revenue-value.highlight { color: var(--text); font-weight: 600; }
 
-    /* Day-by-day table */
     .daily-table-wrapper {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 20px 24px;
       margin-bottom: 16px;
-      display: none;
     }
     .daily-table-wrapper h2 {
       font-size: 14px;
@@ -343,10 +356,7 @@
     .daily-scroll::-webkit-scrollbar { width: 6px; }
     .daily-scroll::-webkit-scrollbar-track { background: transparent; }
     .daily-scroll::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
-    .daily-table {
-      width: 100%;
-      border-collapse: collapse;
-    }
+    .daily-table { width: 100%; border-collapse: collapse; }
     .daily-table th {
       text-align: left;
       font-size: 11px;
@@ -372,7 +382,6 @@
     .daily-table .date-col { color: var(--text-secondary); font-weight: 500; }
     .daily-table .cumulative { color: var(--text-dim); font-size: 12px; }
 
-    /* Empty state */
     .empty-state {
       text-align: center;
       padding: 100px 20px;
@@ -381,7 +390,6 @@
     .empty-state h2 { font-size: 22px; margin-bottom: 8px; font-weight: 600; }
     .empty-state p { color: var(--text-dim); margin-bottom: 24px; font-size: 14px; line-height: 1.6; }
 
-    /* Toast */
     .toast {
       position: fixed;
       bottom: 20px;
@@ -417,13 +425,22 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* Utility */
     .hidden { display: none !important; }
+
+    .error-badge {
+      display: inline-block;
+      font-size: 11px;
+      color: var(--red);
+      background: var(--red-dim);
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-left: 8px;
+    }
   </style>
 </head>
 <body>
   <header>
-    <h1><span class="yt-icon">&#9654;</span> Revenue Dashboard</h1>
+    <h1><span class="yt-icon">&#9654;</span> YouTube Analytics Dashboard</h1>
     <div class="header-right">
       <div class="delay-badge">Data delayed ~2 days</div>
       <a href="/auth" class="btn">+ Connect Channel</a>
@@ -431,28 +448,27 @@
   </header>
 
   <div class="container">
-    <!-- Connected channels -->
     <div class="channels-strip" id="channelsStrip"></div>
 
     <!-- Stats cards -->
     <div class="stats-grid hidden" id="statsGrid">
       <div class="stat-card">
-        <div class="label">Total Revenue <span class="date-hint" id="periodHint"></span></div>
-        <div class="value" id="totalRevenue">0,00 kr</div>
+        <div class="label"><span id="statTotalLabel">Total Revenue</span> <span class="date-hint" id="periodHint"></span></div>
+        <div class="value" id="totalValue">0,00 kr</div>
       </div>
       <div class="stat-card">
-        <div class="label">Latest Day <span class="date-hint" id="latestDayHint"></span></div>
-        <div class="value" id="latestDayRevenue">0,00 kr</div>
+        <div class="label"><span id="statLatestLabel">Latest Day</span> <span class="date-hint" id="latestDayHint"></span></div>
+        <div class="value" id="latestDayValue">0,00 kr</div>
         <div class="change" id="latestDayChange"></div>
       </div>
       <div class="stat-card">
-        <div class="label">Last 7 Days</div>
-        <div class="value" id="last7Revenue">0,00 kr</div>
+        <div class="label"><span id="statL7Label">Last 7 Days</span></div>
+        <div class="value" id="last7Value">0,00 kr</div>
         <div class="change" id="last7Change"></div>
       </div>
       <div class="stat-card">
-        <div class="label">Last 30 Days</div>
-        <div class="value" id="last30Revenue">0,00 kr</div>
+        <div class="label"><span id="statL30Label">Last 30 Days</span></div>
+        <div class="value" id="last30Value">0,00 kr</div>
         <div class="change" id="last30Change"></div>
       </div>
     </div>
@@ -467,7 +483,7 @@
         <label>To</label>
         <input type="date" id="endDate" />
       </div>
-      <button class="btn btn-sm btn-ghost" onclick="fetchRevenue()">Refresh</button>
+      <button class="btn btn-sm btn-ghost" onclick="fetchActiveTab()">Refresh</button>
       <div class="preset-btns">
         <button class="btn btn-sm btn-ghost" onclick="setRange(30)">30D</button>
         <button class="btn btn-sm btn-ghost" onclick="setRange(90)">90D</button>
@@ -476,17 +492,24 @@
       </div>
     </div>
 
-    <!-- View tabs -->
+    <!-- MAIN TABS: Revenue / Long Form Views / Short Form Views -->
+    <div class="main-tabs hidden" id="mainTabs">
+      <button class="main-tab revenue-tab active" onclick="switchMainTab('revenue', this)">Revenue</button>
+      <button class="main-tab longform-tab" onclick="switchMainTab('longform', this)">Long Form Views</button>
+      <button class="main-tab shortform-tab" onclick="switchMainTab('shortform', this)">Short Form Views</button>
+    </div>
+
+    <!-- SUB TABS: Overview / By Channel / Daily Log -->
     <div class="section-tabs hidden" id="viewTabs">
-      <button class="section-tab active" onclick="switchView('overview')">Overview</button>
-      <button class="section-tab" onclick="switchView('channels')">By Channel</button>
-      <button class="section-tab" onclick="switchView('daily')">Daily Log</button>
+      <button class="section-tab active" onclick="switchSubView('overview', this)">Overview</button>
+      <button class="section-tab" onclick="switchSubView('channels', this)">By Channel</button>
+      <button class="section-tab" onclick="switchSubView('daily', this)">Daily Log</button>
     </div>
 
     <!-- OVERVIEW VIEW -->
     <div id="viewOverview">
       <div class="chart-card hidden" id="combinedSection">
-        <h2>Daily Revenue (All Channels Combined)</h2>
+        <h2 id="combinedChartTitle">Daily Revenue (All Channels Combined)</h2>
         <div class="chart-container"><canvas id="combinedChart"></canvas></div>
       </div>
     </div>
@@ -494,10 +517,10 @@
     <!-- CHANNELS VIEW -->
     <div id="viewChannels" class="hidden">
       <div class="channel-breakdown" id="channelBreakdown">
-        <h2>Channel Breakdown</h2>
+        <h2 id="breakdownTitle">Channel Breakdown</h2>
         <table class="breakdown-table">
           <thead>
-            <tr>
+            <tr id="breakdownHeader">
               <th>Channel</th>
               <th>Latest Day</th>
               <th>Last 7 Days</th>
@@ -509,21 +532,20 @@
         </table>
       </div>
       <div class="chart-card">
-        <h2>Revenue by Channel</h2>
+        <h2 id="perChannelChartTitle">Revenue by Channel</h2>
         <div class="chart-container"><canvas id="perChannelChart"></canvas></div>
       </div>
     </div>
 
     <!-- DAILY LOG VIEW -->
     <div id="viewDaily" class="hidden">
-      <div class="daily-table-wrapper" style="display:block;">
-        <h2>Day-by-Day Revenue Log</h2>
+      <div class="daily-table-wrapper">
+        <h2 id="dailyLogTitle">Day-by-Day Revenue Log</h2>
         <div class="daily-scroll">
           <table class="daily-table">
             <thead>
               <tr id="dailyHeader">
                 <th>Date</th>
-                <!-- dynamic channel columns -->
                 <th>Total</th>
                 <th>Cumulative</th>
               </tr>
@@ -536,9 +558,9 @@
 
     <!-- Empty state -->
     <div class="empty-state" id="emptyState">
-      <div class="icon">ð</div>
+      <div class="icon">&#128202;</div>
       <h2>No channels connected</h2>
-      <p>Connect your YouTube channels to start tracking revenue.<br>
+      <p>Connect your YouTube channels to start tracking analytics.<br>
          Data from YouTube Studio is delayed by approximately 2 days.</p>
       <a href="/auth" class="btn">+ Connect Your First Channel</a>
     </div>
@@ -553,11 +575,67 @@
     // -----------------------------------------------------------------------
     const COLORS = ['#ff3b3b', '#3b82f6', '#f59e0b', '#22c55e', '#a855f7'];
     let combinedChartObj, perChannelChartObj;
-    let revenueData = null;
-    let currentView = 'overview';
+    let currentMainTab = 'revenue';
+    let currentSubView = 'overview';
+
+    // Cached data per tab
+    const tabData = {
+      revenue: null,
+      longform: null,
+      shortform: null,
+    };
+
+    // Tab configuration
+    const TAB_CONFIG = {
+      revenue: {
+        endpoint: '/api/revenue',
+        valueKey: 'revenue',
+        label: 'Revenue',
+        unit: 'kr',
+        format: v => v.toLocaleString('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kr',
+        chartColor: '#ff3b3b',
+        chartBg: 'rgba(255, 59, 59, 0.08)',
+        combinedTitle: 'Daily Revenue (All Channels Combined)',
+        perChannelTitle: 'Revenue by Channel',
+        breakdownTitle: 'Channel Revenue Breakdown',
+        dailyTitle: 'Day-by-Day Revenue Log',
+        tooltipSuffix: ' kr',
+        yAxisSuffix: ' kr',
+      },
+      longform: {
+        endpoint: '/api/views/longform',
+        valueKey: 'views',
+        label: 'Long Form Views',
+        unit: '',
+        format: v => v.toLocaleString('sv-SE'),
+        chartColor: '#3b82f6',
+        chartBg: 'rgba(59, 130, 246, 0.08)',
+        combinedTitle: 'Daily Long Form Views (All Channels Combined)',
+        perChannelTitle: 'Long Form Views by Channel',
+        breakdownTitle: 'Channel Long Form Views Breakdown',
+        dailyTitle: 'Day-by-Day Long Form Views Log',
+        tooltipSuffix: ' views',
+        yAxisSuffix: '',
+      },
+      shortform: {
+        endpoint: '/api/views/shortform',
+        valueKey: 'views',
+        label: 'Short Form Views',
+        unit: '',
+        format: v => v.toLocaleString('sv-SE'),
+        chartColor: '#f59e0b',
+        chartBg: 'rgba(245, 158, 11, 0.08)',
+        combinedTitle: 'Daily Short Form Views (All Channels Combined)',
+        perChannelTitle: 'Short Form Views by Channel',
+        breakdownTitle: 'Channel Short Form Views Breakdown',
+        dailyTitle: 'Day-by-Day Short Form Views Log',
+        tooltipSuffix: ' views',
+        yAxisSuffix: '',
+      },
+    };
 
     // -----------------------------------------------------------------------
-    // Init â set end date to 2 days ago (YouTube data delay)
+    // Init
     // -----------------------------------------------------------------------
     function getDelayedDate() {
       const d = new Date();
@@ -575,12 +653,25 @@
     loadChannels();
 
     // -----------------------------------------------------------------------
-    // View switching
+    // Main tab switching (Revenue / Long Form / Short Form)
     // -----------------------------------------------------------------------
-    function switchView(view) {
-      currentView = view;
+    function switchMainTab(tab, el) {
+      currentMainTab = tab;
+      document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
+      el.classList.add('active');
+
+      // Clear cached data and refetch
+      tabData[tab] = null;
+      fetchActiveTab();
+    }
+
+    // -----------------------------------------------------------------------
+    // Sub-view switching (Overview / By Channel / Daily)
+    // -----------------------------------------------------------------------
+    function switchSubView(view, el) {
+      currentSubView = view;
       document.querySelectorAll('.section-tab').forEach(t => t.classList.remove('active'));
-      event.target.classList.add('active');
+      el.classList.add('active');
 
       document.getElementById('viewOverview').classList.toggle('hidden', view !== 'overview');
       document.getElementById('viewChannels').classList.toggle('hidden', view !== 'channels');
@@ -596,7 +687,7 @@
       const strip = document.getElementById('channelsStrip');
       strip.innerHTML = '';
 
-      const sections = ['statsGrid', 'controlsBar', 'viewTabs', 'combinedSection'];
+      const sections = ['statsGrid', 'controlsBar', 'mainTabs', 'viewTabs', 'combinedSection'];
       if (channels.length === 0) {
         document.getElementById('emptyState').style.display = '';
         sections.forEach(id => document.getElementById(id).classList.add('hidden'));
@@ -619,7 +710,7 @@
         strip.appendChild(chip);
       });
 
-      fetchRevenue();
+      fetchActiveTab();
     }
 
     async function removeChannel(id) {
@@ -629,21 +720,25 @@
     }
 
     // -----------------------------------------------------------------------
-    // Revenue
+    // Fetch data for active tab
     // -----------------------------------------------------------------------
-    async function fetchRevenue() {
+    async function fetchActiveTab() {
+      const config = TAB_CONFIG[currentMainTab];
       const startDate = document.getElementById('startDate').value;
       const endDate = document.getElementById('endDate').value;
       document.getElementById('loading').classList.add('active');
 
       try {
-        const res = await fetch(`/api/revenue?startDate=${startDate}&endDate=${endDate}`);
-        revenueData = await res.json();
-        updateStats(revenueData);
-        renderCombinedChart(revenueData);
-        renderPerChannelChart(revenueData);
-        renderChannelBreakdown(revenueData);
-        renderDailyLog(revenueData);
+        const res = await fetch(`${config.endpoint}?startDate=${startDate}&endDate=${endDate}`);
+        const data = await res.json();
+        tabData[currentMainTab] = data;
+
+        updateLabels(config);
+        updateStats(data, config);
+        renderCombinedChart(data, config);
+        renderPerChannelChart(data, config);
+        renderChannelBreakdown(data, config);
+        renderDailyLog(data, config);
       } catch (err) {
         showToast('Error: ' + err.message);
       } finally {
@@ -652,45 +747,70 @@
     }
 
     // -----------------------------------------------------------------------
+    // Update labels based on active tab
+    // -----------------------------------------------------------------------
+    function updateLabels(config) {
+      document.getElementById('statTotalLabel').textContent = 'Total ' + config.label;
+      document.getElementById('statLatestLabel').textContent = 'Latest Day';
+      document.getElementById('statL7Label').textContent = 'Last 7 Days';
+      document.getElementById('statL30Label').textContent = 'Last 30 Days';
+      document.getElementById('combinedChartTitle').textContent = config.combinedTitle;
+      document.getElementById('perChannelChartTitle').textContent = config.perChannelTitle;
+      document.getElementById('breakdownTitle').textContent = config.breakdownTitle;
+      document.getElementById('dailyLogTitle').textContent = config.dailyTitle;
+    }
+
+    // -----------------------------------------------------------------------
     // Stats cards
     // -----------------------------------------------------------------------
-    function updateStats(data) {
+    function updateStats(data, config) {
+      const vk = config.valueKey;
+      const fmt = config.format;
       const totals = data.totals;
-      if (!totals || totals.length === 0) return;
 
-      const totalRev = totals.reduce((s, r) => s + r.revenue, 0);
-      document.getElementById('totalRevenue').textContent = fmt(totalRev);
+      if (!totals || totals.length === 0) {
+        document.getElementById('totalValue').textContent = fmt(0);
+        document.getElementById('latestDayValue').textContent = fmt(0);
+        document.getElementById('last7Value').textContent = fmt(0);
+        document.getElementById('last30Value').textContent = fmt(0);
+        document.getElementById('latestDayChange').textContent = '';
+        document.getElementById('last7Change').textContent = '';
+        document.getElementById('last30Change').textContent = '';
+        return;
+      }
 
-      // Period hint
+      const totalVal = totals.reduce((s, r) => s + r[vk], 0);
+      document.getElementById('totalValue').textContent = fmt(totalVal);
+
       const startDate = document.getElementById('startDate').value;
       const endDate = document.getElementById('endDate').value;
-      document.getElementById('periodHint').textContent = `(${formatDateShort(startDate)} â ${formatDateShort(endDate)})`;
+      document.getElementById('periodHint').textContent = `(${formatDateShort(startDate)} \u2013 ${formatDateShort(endDate)})`;
 
-      // Latest available day (with date shown)
       const latest = totals[totals.length - 1];
       const prev = totals.length > 1 ? totals[totals.length - 2] : null;
-      document.getElementById('latestDayRevenue').textContent = fmt(latest.revenue);
+      document.getElementById('latestDayValue').textContent = fmt(latest[vk]);
       document.getElementById('latestDayHint').textContent = `(${formatDateShort(latest.date)})`;
-      if (prev) setChange('latestDayChange', latest.revenue, prev.revenue);
+      if (prev) setChange('latestDayChange', latest[vk], prev[vk]);
+      else document.getElementById('latestDayChange').textContent = '';
 
-      // Last 7 days
-      const last7 = totals.slice(-7).reduce((s, r) => s + r.revenue, 0);
-      const prior7 = totals.slice(-14, -7).reduce((s, r) => s + r.revenue, 0);
-      document.getElementById('last7Revenue').textContent = fmt(last7);
+      const last7 = totals.slice(-7).reduce((s, r) => s + r[vk], 0);
+      const prior7 = totals.slice(-14, -7).reduce((s, r) => s + r[vk], 0);
+      document.getElementById('last7Value').textContent = fmt(last7);
       if (prior7 > 0) setChange('last7Change', last7, prior7);
+      else document.getElementById('last7Change').textContent = '';
 
-      // Last 30 days
-      const last30 = totals.slice(-30).reduce((s, r) => s + r.revenue, 0);
-      const prior30 = totals.slice(-60, -30).reduce((s, r) => s + r.revenue, 0);
-      document.getElementById('last30Revenue').textContent = fmt(last30);
+      const last30 = totals.slice(-30).reduce((s, r) => s + r[vk], 0);
+      const prior30 = totals.slice(-60, -30).reduce((s, r) => s + r[vk], 0);
+      document.getElementById('last30Value').textContent = fmt(last30);
       if (prior30 > 0) setChange('last30Change', last30, prior30);
+      else document.getElementById('last30Change').textContent = '';
     }
 
     function setChange(elId, current, previous) {
       const el = document.getElementById(elId);
       const pct = ((current - previous) / previous) * 100;
       const sign = pct >= 0 ? '+' : '';
-      const arrow = pct >= 0 ? 'â' : 'â';
+      const arrow = pct >= 0 ? '\u2191' : '\u2193';
       el.textContent = `${arrow} ${sign}${pct.toFixed(1)}% vs prior`;
       el.className = 'change ' + (pct >= 0 ? 'up' : 'down');
     }
@@ -698,7 +818,9 @@
     // -----------------------------------------------------------------------
     // Channel breakdown table
     // -----------------------------------------------------------------------
-    function renderChannelBreakdown(data) {
+    function renderChannelBreakdown(data, config) {
+      const vk = config.valueKey;
+      const fmt = config.format;
       const body = document.getElementById('breakdownBody');
       body.innerHTML = '';
 
@@ -706,15 +828,17 @@
 
       data.channels.forEach((ch, i) => {
         const rows = ch.data;
-        const latestDay = rows.length > 0 ? rows[rows.length - 1].revenue : 0;
-        const l7 = rows.slice(-7).reduce((s, r) => s + r.revenue, 0);
-        const l30 = rows.slice(-30).reduce((s, r) => s + r.revenue, 0);
-        const all = rows.reduce((s, r) => s + r.revenue, 0);
+        const latestDay = rows.length > 0 ? rows[rows.length - 1][vk] : 0;
+        const l7 = rows.slice(-7).reduce((s, r) => s + r[vk], 0);
+        const l30 = rows.slice(-30).reduce((s, r) => s + r[vk], 0);
+        const all = rows.reduce((s, r) => s + r[vk], 0);
 
         totalLatest += latestDay;
         totalL7 += l7;
         totalL30 += l30;
         totalAll += all;
+
+        const errorBadge = ch.error ? `<span class="error-badge" title="${ch.error}">Error</span>` : '';
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -722,7 +846,7 @@
             <div class="channel-name">
               <span class="color-dot" style="background:${COLORS[i % COLORS.length]}"></span>
               <img src="${ch.channelThumbnail}" alt="" />
-              <span>${ch.channelTitle}</span>
+              <span>${ch.channelTitle}${errorBadge}</span>
             </div>
           </td>
           <td class="revenue-value">${fmt(latestDay)}</td>
@@ -733,7 +857,6 @@
         body.appendChild(tr);
       });
 
-      // Total row
       if (data.channels.length > 1) {
         const tr = document.createElement('tr');
         tr.className = 'total-row';
@@ -751,11 +874,12 @@
     // -----------------------------------------------------------------------
     // Daily log table
     // -----------------------------------------------------------------------
-    function renderDailyLog(data) {
+    function renderDailyLog(data, config) {
+      const vk = config.valueKey;
+      const fmt = config.format;
       const header = document.getElementById('dailyHeader');
       const body = document.getElementById('dailyBody');
 
-      // Build header
       let headerHTML = '<th>Date</th>';
       data.channels.forEach(ch => {
         headerHTML += `<th>${ch.channelTitle}</th>`;
@@ -763,7 +887,6 @@
       headerHTML += '<th>Total</th><th>Cumulative</th>';
       header.innerHTML = headerHTML;
 
-      // Build a map: date -> { channelId: revenue }
       const dateMap = {};
       const allDates = new Set();
 
@@ -771,18 +894,15 @@
         ch.data.forEach(row => {
           allDates.add(row.date);
           if (!dateMap[row.date]) dateMap[row.date] = {};
-          dateMap[row.date][ch.channelId] = row.revenue;
+          dateMap[row.date][ch.channelId] = row[vk];
         });
       });
 
-      const sortedDates = [...allDates].sort().reverse(); // newest first
-      let cumulative = data.totals.reduce((s, r) => s + r.revenue, 0);
+      const sortedDates = [...allDates].sort().reverse();
 
-      // We need cumulative from the top (newest), so compute forward first
       const totalByDate = {};
-      data.totals.forEach(r => { totalByDate[r.date] = r.revenue; });
+      data.totals.forEach(r => { totalByDate[r.date] = r[vk]; });
 
-      // Calculate cumulative going from oldest to newest
       const cumulativeMap = {};
       let runningTotal = 0;
       [...allDates].sort().forEach(date => {
@@ -796,8 +916,8 @@
         let rowHTML = `<td class="date-col">${formatDateShort(date)}</td>`;
 
         data.channels.forEach(ch => {
-          const rev = (dateMap[date] && dateMap[date][ch.channelId]) || 0;
-          rowHTML += `<td>${fmt(rev)}</td>`;
+          const val = (dateMap[date] && dateMap[date][ch.channelId]) || 0;
+          rowHTML += `<td>${fmt(val)}</td>`;
         });
 
         rowHTML += `<td class="revenue-value highlight">${fmt(dayTotal)}</td>`;
@@ -812,40 +932,58 @@
     // -----------------------------------------------------------------------
     // Charts
     // -----------------------------------------------------------------------
-    const chartDefaults = {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { intersect: false, mode: 'index' },
-      plugins: {
-        legend: { labels: { color: '#9ca3af', font: { size: 12 }, usePointStyle: true, pointStyle: 'circle', padding: 16 } },
-        tooltip: {
-          backgroundColor: '#1a1a2e',
-          titleColor: '#f0f0f5',
-          bodyColor: '#9ca3af',
-          borderColor: '#2a2a3e',
-          borderWidth: 1,
-          padding: 10,
-          cornerRadius: 8,
-          callbacks: {
-            label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)} kr`
+    function makeChartOptions(config) {
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { intersect: false, mode: 'index' },
+        plugins: {
+          legend: { labels: { color: '#9ca3af', font: { size: 12 }, usePointStyle: true, pointStyle: 'circle', padding: 16 } },
+          tooltip: {
+            backgroundColor: '#1a1a2e',
+            titleColor: '#f0f0f5',
+            bodyColor: '#9ca3af',
+            borderColor: '#2a2a3e',
+            borderWidth: 1,
+            padding: 10,
+            cornerRadius: 8,
+            callbacks: {
+              label: ctx => {
+                const v = ctx.parsed.y;
+                if (config.valueKey === 'revenue') {
+                  return ` ${ctx.dataset.label}: ${v.toLocaleString('sv-SE', {minimumFractionDigits:2, maximumFractionDigits:2})} kr`;
+                }
+                return ` ${ctx.dataset.label}: ${v.toLocaleString('sv-SE')}${config.tooltipSuffix}`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            type: 'time',
+            time: { unit: 'day', tooltipFormat: 'MMM d, yyyy' },
+            grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
+            ticks: { color: '#6b7280', maxTicksLimit: 12, font: { size: 11 } }
+          },
+          y: {
+            grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
+            ticks: {
+              color: '#6b7280',
+              font: { size: 11 },
+              callback: v => {
+                if (config.valueKey === 'revenue') return v.toFixed(0) + ' kr';
+                if (v >= 1000000) return (v / 1000000).toFixed(1) + 'M';
+                if (v >= 1000) return (v / 1000).toFixed(0) + 'K';
+                return v.toFixed(0);
+              }
+            }
           }
         }
-      },
-      scales: {
-        x: {
-          type: 'time',
-          time: { unit: 'day', tooltipFormat: 'MMM d, yyyy' },
-          grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
-          ticks: { color: '#6b7280', maxTicksLimit: 12, font: { size: 11 } }
-        },
-        y: {
-          grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
-          ticks: { color: '#6b7280', font: { size: 11 }, callback: v => v.toFixed(0) + ' kr' }
-        }
-      }
-    };
+      };
+    }
 
-    function renderCombinedChart(data) {
+    function renderCombinedChart(data, config) {
+      const vk = config.valueKey;
       const ctx = document.getElementById('combinedChart').getContext('2d');
       if (combinedChartObj) combinedChartObj.destroy();
 
@@ -853,30 +991,31 @@
         type: 'line',
         data: {
           datasets: [{
-            label: 'Combined Revenue',
-            data: data.totals.map(r => ({ x: r.date, y: r.revenue })),
-            borderColor: '#ff3b3b',
-            backgroundColor: 'rgba(255, 59, 59, 0.08)',
+            label: 'Combined ' + config.label,
+            data: data.totals.map(r => ({ x: r.date, y: r[vk] })),
+            borderColor: config.chartColor,
+            backgroundColor: config.chartBg,
             fill: true,
             tension: 0.35,
             pointRadius: 0,
             pointHoverRadius: 5,
-            pointHoverBackgroundColor: '#ff3b3b',
+            pointHoverBackgroundColor: config.chartColor,
             pointHitRadius: 10,
             borderWidth: 2,
           }]
         },
-        options: JSON.parse(JSON.stringify(chartDefaults))
+        options: makeChartOptions(config)
       });
     }
 
-    function renderPerChannelChart(data) {
+    function renderPerChannelChart(data, config) {
+      const vk = config.valueKey;
       const ctx = document.getElementById('perChannelChart').getContext('2d');
       if (perChannelChartObj) perChannelChartObj.destroy();
 
       const datasets = data.channels.map((ch, i) => ({
         label: ch.channelTitle,
-        data: ch.data.map(r => ({ x: r.date, y: r.revenue })),
+        data: ch.data.map(r => ({ x: r.date, y: r[vk] })),
         borderColor: COLORS[i % COLORS.length],
         backgroundColor: 'transparent',
         tension: 0.35,
@@ -890,17 +1029,13 @@
       perChannelChartObj = new Chart(ctx, {
         type: 'line',
         data: { datasets },
-        options: JSON.parse(JSON.stringify(chartDefaults))
+        options: makeChartOptions(config)
       });
     }
 
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
-    function fmt(n) {
-      return n.toLocaleString('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kr';
-    }
-
     function formatDateShort(dateStr) {
       const d = new Date(dateStr + 'T00:00:00');
       return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
@@ -908,7 +1043,7 @@
 
     function setRange(days) {
       const end = new Date();
-      end.setDate(end.getDate() - 2); // account for 2-day delay
+      end.setDate(end.getDate() - 2);
       document.getElementById('endDate').value = end.toISOString().slice(0, 10);
       if (days === 'all') {
         document.getElementById('startDate').value = '2024-01-01';
@@ -917,7 +1052,7 @@
         start.setDate(start.getDate() - days);
         document.getElementById('startDate').value = start.toISOString().slice(0, 10);
       }
-      fetchRevenue();
+      fetchActiveTab();
     }
 
     function showToast(msg) {
