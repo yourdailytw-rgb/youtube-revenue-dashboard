@@ -343,7 +343,7 @@ async function fetchAnalyticsForAllChannels({ startDate, endDate, metrics, dimen
       }
 
       results.push({
-        channelId
+        channelId,
         channelTitle: data.channelTitle,
         channelThumbnail: data.channelThumbnail,
         data: rows,
