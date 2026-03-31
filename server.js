@@ -19,7 +19,7 @@ const SCOPES = [
 
 // ---------------------------------------------------------------------------
 // Helpers â token persistence
-// ---------------------------------------------------------------------------
+// --------------------------------------------------------------------------
 
 function loadTokens() {
   if (fs.existsSync(TOKENS_FILE)) {
@@ -343,7 +343,7 @@ async function fetchAnalyticsForAllChannels({ startDate, endDate, metrics, dimen
       }
 
       results.push({
-        channelId,
+        channelId
         channelTitle: data.channelTitle,
         channelThumbnail: data.channelThumbnail,
         data: rows,
@@ -410,7 +410,7 @@ app.get('/api/views/longform', async (req, res) => {
     metrics: 'views',
     dimensions: 'day,creatorContentType',
     sort: 'day',
-    contentTypeFilter: 'VIDEO_ON_DEMAND',
+    contentTypeFilter: 'videoOnDemand',
   });
 
   res.json(result);
@@ -430,7 +430,7 @@ app.get('/api/views/shortform', async (req, res) => {
     metrics: 'views',
     dimensions: 'day,creatorContentType',
     sort: 'day',
-    contentTypeFilter: 'SHORTS',
+    contentTypeFilter: 'shorts',
   });
 
   res.json(result);
