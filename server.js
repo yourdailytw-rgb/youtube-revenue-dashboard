@@ -12,8 +12,8 @@ app.use(express.urlencoded({ extended: true }));
 const PORT = process.env.PORT || 3000;
 const TOKENS_FILE = path.join(__dirname, 'tokens.json');
 const SCOPES = [
-    'https://www.googleapis.com/auth/yt-analytics-monetary.readonly',
   'https://www.googleapis.com/auth/yt-analytics.readonly',
+  'https://www.googleapis.com/auth/yt-analytics-monetary.readonly',
   'https://www.googleapis.com/auth/youtube.readonly',
 ];
 
@@ -226,6 +226,7 @@ app.get('/oauth2callback', async (req, res) => {
   try {
     const oauth2Client = makeOAuth2Client();
     const { tokens } = await oauth2Client.getToken(code);
+    console.log('Token scopes granted:', tokens.scope);
     oauth2Client.setCredentials(tokens);
 
     const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
@@ -238,6 +239,8 @@ app.get('/oauth2callback', async (req, res) => {
     const channelTitle = channel.snippet.title;
     const channelThumbnail = channel.snippet.thumbnails.default.url;
 
+    console.log(`Channel connected: ${channelTitle} (${channelId})`);
+
     const allTokens = loadTokens();
     allTokens[channelId] = { tokens, channelTitle, channelThumbnail };
     saveTokens(allTokens);
@@ -245,6 +248,7 @@ app.get('/oauth2callback', async (req, res) => {
     res.redirect('/?connected=' + encodeURIComponent(channelTitle));
   } catch (err) {
     console.error('OAuth callback error:', err.message);
+    if (err.response) console.error('Error details:', JSON.stringify(err.response.data));
     res.status(500).send('Authentication failed: ' + err.message);
   }
 });
@@ -306,6 +310,7 @@ app.get('/api/revenue', async (req, res) => {
         metrics: 'estimatedRevenue',
         dimensions: 'day',
         sort: 'day',
+        currency: 'SEK',
       });
 
       const rows = (report.data.rows || []).map((r) => ({
@@ -321,6 +326,8 @@ app.get('/api/revenue', async (req, res) => {
       });
     } catch (err) {
       console.error(`Error fetching revenue for ${data.channelTitle}:`, err.message);
+      if (err.response) console.error('Revenue error details:', err.response.status, JSON.stringify(err.response.data));
+      console.error('Token scopes:', data.tokens.scope);
       results.push({
         channelId,
         channelTitle: data.channelTitle,
