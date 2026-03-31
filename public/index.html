@@ -8,90 +8,109 @@
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
   <style>
     :root {
-      --bg: #0f0f0f;
-      --card: #1a1a2e;
-      --accent: #ff0000;
-      --accent2: #00bcd4;
-      --text: #e0e0e0;
-      --text-dim: #888;
-      --border: #2a2a3e;
+      --bg: #0a0a0f;
+      --card: #12121a;
+      --card-hover: #181825;
+      --accent: #ff3b3b;
+      --accent-glow: rgba(255, 59, 59, 0.15);
+      --green: #22c55e;
+      --green-dim: rgba(34, 197, 94, 0.12);
+      --red: #ef4444;
+      --red-dim: rgba(239, 68, 68, 0.12);
+      --blue: #3b82f6;
+      --cyan: #06b6d4;
+      --orange: #f59e0b;
+      --purple: #a855f7;
+      --lime: #84cc16;
+      --text: #f0f0f5;
+      --text-secondary: #9ca3af;
+      --text-dim: #6b7280;
+      --border: #1e1e2e;
+      --border-light: #2a2a3e;
     }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
     }
+
+    /* Header */
     header {
       background: var(--card);
       border-bottom: 1px solid var(--border);
-      padding: 16px 32px;
+      padding: 14px 28px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(12px);
     }
     header h1 {
-      font-size: 20px;
+      font-size: 17px;
       font-weight: 600;
       display: flex;
       align-items: center;
       gap: 10px;
+      letter-spacing: -0.3px;
     }
-    header h1 .yt-icon {
-      color: var(--accent);
-      font-size: 28px;
+    .yt-icon { color: var(--accent); font-size: 22px; }
+    .header-right { display: flex; align-items: center; gap: 12px; }
+    .delay-badge {
+      font-size: 11px;
+      color: var(--text-dim);
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
     }
+    .delay-badge::before { content: 'â±'; font-size: 12px; }
+
     .btn {
       background: var(--accent);
       color: #fff;
       border: none;
-      padding: 10px 20px;
-      border-radius: 6px;
+      padding: 8px 16px;
+      border-radius: 8px;
       cursor: pointer;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 500;
       text-decoration: none;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      transition: opacity 0.2s;
+      gap: 5px;
+      transition: all 0.2s;
     }
-    .btn:hover { opacity: 0.85; }
-    .btn-sm { padding: 6px 12px; font-size: 12px; }
-    .btn-outline {
+    .btn:hover { opacity: 0.9; transform: translateY(-1px); }
+    .btn-sm { padding: 5px 10px; font-size: 12px; border-radius: 6px; }
+    .btn-ghost {
       background: transparent;
       border: 1px solid var(--border);
-      color: var(--text);
+      color: var(--text-secondary);
     }
-    .btn-danger { background: #c0392b; }
+    .btn-ghost:hover { border-color: var(--text-dim); color: var(--text); background: rgba(255,255,255,0.03); }
+    .btn-ghost.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-glow);
+    }
 
-    .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
-
-    /* Stats row */
-    .stats-row {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
-    }
-    .stat-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px;
-    }
-    .stat-card .label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
-    .stat-card .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
-    .stat-card .change { font-size: 13px; margin-top: 4px; }
-    .stat-card .change.up { color: #27ae60; }
-    .stat-card .change.down { color: #e74c3c; }
+    .container { max-width: 1340px; margin: 0 auto; padding: 20px 24px; }
 
     /* Channels strip */
     .channels-strip {
       display: flex;
-      gap: 12px;
-      margin-bottom: 24px;
+      gap: 8px;
+      margin-bottom: 20px;
       flex-wrap: wrap;
       align-items: center;
     }
@@ -102,102 +121,313 @@
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 100px;
-      padding: 6px 14px 6px 6px;
+      padding: 5px 14px 5px 5px;
       font-size: 13px;
+      transition: border-color 0.2s;
     }
-    .channel-chip img {
-      width: 28px;
-      height: 28px;
-      border-radius: 50%;
-    }
+    .channel-chip:hover { border-color: var(--border-light); }
+    .channel-chip img { width: 26px; height: 26px; border-radius: 50%; }
     .channel-chip .remove {
       cursor: pointer;
       color: var(--text-dim);
       margin-left: 4px;
-      font-size: 16px;
+      font-size: 15px;
+      line-height: 1;
     }
-    .channel-chip .remove:hover { color: #e74c3c; }
+    .channel-chip .remove:hover { color: var(--red); }
 
-    /* Date controls */
-    .controls {
-      display: flex;
+    /* Stats Overview */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
       gap: 12px;
-      margin-bottom: 24px;
-      align-items: center;
-      flex-wrap: wrap;
+      margin-bottom: 20px;
     }
-    .controls label { font-size: 13px; color: var(--text-dim); }
-    .controls input[type="date"] {
-      background: var(--card);
-      border: 1px solid var(--border);
-      color: var(--text);
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-size: 13px;
-    }
-    .preset-btns { display: flex; gap: 6px; margin-left: 12px; }
+    @media (max-width: 900px) { .stats-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 500px) { .stats-grid { grid-template-columns: 1fr; } }
 
-    /* Charts */
-    .chart-section {
+    .stat-card {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 12px;
-      padding: 24px;
-      margin-bottom: 24px;
+      padding: 18px 20px;
+      transition: border-color 0.2s;
     }
-    .chart-section h2 {
-      font-size: 16px;
-      font-weight: 600;
+    .stat-card:hover { border-color: var(--border-light); }
+    .stat-card .label {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      font-weight: 500;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .stat-card .label .date-hint {
+      font-size: 10px;
+      color: var(--text-dim);
+      text-transform: none;
+      letter-spacing: 0;
+      opacity: 0.7;
+    }
+    .stat-card .value {
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      line-height: 1.1;
+    }
+    .stat-card .change {
+      font-size: 12px;
+      margin-top: 6px;
+      font-weight: 500;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 8px;
+      border-radius: 20px;
+    }
+    .stat-card .change.up { color: var(--green); background: var(--green-dim); }
+    .stat-card .change.down { color: var(--red); background: var(--red-dim); }
+
+    /* Controls bar */
+    .controls-bar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .date-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 4px 10px;
+    }
+    .date-group label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; }
+    .date-group input[type="date"] {
+      background: transparent;
+      border: none;
+      color: var(--text);
+      padding: 4px 2px;
+      font-size: 13px;
+      outline: none;
+      font-family: inherit;
+    }
+    .date-group input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); }
+    .preset-btns { display: flex; gap: 4px; }
+
+    /* Tabs for chart sections */
+    .section-tabs {
+      display: flex;
+      gap: 2px;
+      margin-bottom: 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 3px;
+      width: fit-content;
+    }
+    .section-tab {
+      padding: 7px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-dim);
+      background: transparent;
+      border: none;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .section-tab:hover { color: var(--text-secondary); }
+    .section-tab.active { background: rgba(255,255,255,0.08); color: var(--text); }
+
+    /* Chart cards */
+    .chart-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
       margin-bottom: 16px;
     }
-    .chart-container { position: relative; height: 350px; }
+    .chart-card h2 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: var(--text-secondary);
+      letter-spacing: -0.2px;
+    }
+    .chart-container { position: relative; height: 320px; }
+
+    /* Channel breakdown table */
+    .channel-breakdown {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-bottom: 16px;
+    }
+    .channel-breakdown h2 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: var(--text-secondary);
+    }
+    .breakdown-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .breakdown-table th {
+      text-align: left;
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      font-weight: 500;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .breakdown-table th:not(:first-child) { text-align: right; }
+    .breakdown-table td {
+      padding: 12px;
+      font-size: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .breakdown-table td:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+    .breakdown-table tr:last-child td { border-bottom: none; }
+    .breakdown-table .channel-name {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .breakdown-table .channel-name img {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+    }
+    .breakdown-table .channel-name .color-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .breakdown-table .total-row td {
+      font-weight: 600;
+      color: var(--text);
+      border-top: 2px solid var(--border-light);
+      border-bottom: none;
+    }
+    .revenue-value { font-weight: 500; }
+    .revenue-value.highlight { color: var(--text); font-weight: 600; }
+
+    /* Day-by-day table */
+    .daily-table-wrapper {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px 24px;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .daily-table-wrapper h2 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: var(--text-secondary);
+    }
+    .daily-scroll { max-height: 500px; overflow-y: auto; }
+    .daily-scroll::-webkit-scrollbar { width: 6px; }
+    .daily-scroll::-webkit-scrollbar-track { background: transparent; }
+    .daily-scroll::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
+    .daily-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .daily-table th {
+      text-align: left;
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      font-weight: 500;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: var(--card);
+    }
+    .daily-table th:not(:first-child) { text-align: right; }
+    .daily-table td {
+      padding: 8px 12px;
+      font-size: 13px;
+      border-bottom: 1px solid var(--border);
+      font-variant-numeric: tabular-nums;
+    }
+    .daily-table td:not(:first-child) { text-align: right; }
+    .daily-table tr:hover { background: rgba(255,255,255,0.02); }
+    .daily-table .date-col { color: var(--text-secondary); font-weight: 500; }
+    .daily-table .cumulative { color: var(--text-dim); font-size: 12px; }
 
     /* Empty state */
     .empty-state {
       text-align: center;
-      padding: 80px 20px;
+      padding: 100px 20px;
     }
-    .empty-state h2 { font-size: 24px; margin-bottom: 12px; }
-    .empty-state p { color: var(--text-dim); margin-bottom: 24px; }
+    .empty-state .icon { font-size: 48px; margin-bottom: 16px; opacity: 0.6; }
+    .empty-state h2 { font-size: 22px; margin-bottom: 8px; font-weight: 600; }
+    .empty-state p { color: var(--text-dim); margin-bottom: 24px; font-size: 14px; line-height: 1.6; }
 
     /* Toast */
     .toast {
       position: fixed;
-      bottom: 24px;
-      right: 24px;
-      background: #27ae60;
+      bottom: 20px;
+      right: 20px;
+      background: var(--green);
       color: #fff;
-      padding: 12px 20px;
+      padding: 10px 18px;
       border-radius: 8px;
-      font-size: 14px;
+      font-size: 13px;
+      font-weight: 500;
       display: none;
       z-index: 999;
       animation: slideIn 0.3s ease;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     }
-    @keyframes slideIn { from { transform: translateY(20px); opacity: 0; } }
+    @keyframes slideIn { from { transform: translateY(16px); opacity: 0; } }
 
     .loading-overlay {
       display: none;
       position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.6);
+      background: rgba(0,0,0,0.5);
       z-index: 998;
       justify-content: center; align-items: center;
+      backdrop-filter: blur(4px);
     }
     .loading-overlay.active { display: flex; }
     .spinner {
-      width: 40px; height: 40px;
-      border: 4px solid var(--border);
+      width: 36px; height: 36px;
+      border: 3px solid var(--border);
       border-top-color: var(--accent);
       border-radius: 50%;
-      animation: spin 0.8s linear infinite;
+      animation: spin 0.7s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Utility */
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
   <header>
-    <h1><span class="yt-icon">&#9654;</span> YouTube Revenue Dashboard</h1>
-    <a href="/auth" class="btn">+ Connect Channel</a>
+    <h1><span class="yt-icon">&#9654;</span> Revenue Dashboard</h1>
+    <div class="header-right">
+      <div class="delay-badge">Data delayed ~2 days</div>
+      <a href="/auth" class="btn">+ Connect Channel</a>
+    </div>
   </header>
 
   <div class="container">
@@ -205,66 +435,111 @@
     <div class="channels-strip" id="channelsStrip"></div>
 
     <!-- Stats cards -->
-    <div class="stats-row" id="statsRow" style="display:none;">
+    <div class="stats-grid hidden" id="statsGrid">
       <div class="stat-card">
-        <div class="label">Total Revenue (Period)</div>
-        <div class="value" id="totalRevenue">$0.00</div>
+        <div class="label">Total Revenue <span class="date-hint" id="periodHint"></span></div>
+        <div class="value" id="totalRevenue">0,00 kr</div>
       </div>
       <div class="stat-card">
-        <div class="label">Yesterday</div>
-        <div class="value" id="yesterdayRevenue">$0.00</div>
-        <div class="change" id="yesterdayChange"></div>
+        <div class="label">Latest Day <span class="date-hint" id="latestDayHint"></span></div>
+        <div class="value" id="latestDayRevenue">0,00 kr</div>
+        <div class="change" id="latestDayChange"></div>
       </div>
       <div class="stat-card">
         <div class="label">Last 7 Days</div>
-        <div class="value" id="last7Revenue">$0.00</div>
+        <div class="value" id="last7Revenue">0,00 kr</div>
         <div class="change" id="last7Change"></div>
       </div>
       <div class="stat-card">
         <div class="label">Last 30 Days</div>
-        <div class="value" id="last30Revenue">$0.00</div>
+        <div class="value" id="last30Revenue">0,00 kr</div>
         <div class="change" id="last30Change"></div>
       </div>
     </div>
 
-    <!-- Date controls -->
-    <div class="controls" id="controls" style="display:none;">
-      <label>From</label>
-      <input type="date" id="startDate" value="2024-01-01" />
-      <label>To</label>
-      <input type="date" id="endDate" />
-      <button class="btn btn-sm btn-outline" onclick="fetchRevenue()">Refresh</button>
+    <!-- Controls -->
+    <div class="controls-bar hidden" id="controlsBar">
+      <div class="date-group">
+        <label>From</label>
+        <input type="date" id="startDate" value="2024-01-01" />
+      </div>
+      <div class="date-group">
+        <label>To</label>
+        <input type="date" id="endDate" />
+      </div>
+      <button class="btn btn-sm btn-ghost" onclick="fetchRevenue()">Refresh</button>
       <div class="preset-btns">
-        <button class="btn btn-sm btn-outline" onclick="setRange(30)">30D</button>
-        <button class="btn btn-sm btn-outline" onclick="setRange(90)">90D</button>
-        <button class="btn btn-sm btn-outline" onclick="setRange(365)">1Y</button>
-        <button class="btn btn-sm btn-outline" onclick="setRange('all')">All</button>
+        <button class="btn btn-sm btn-ghost" onclick="setRange(30)">30D</button>
+        <button class="btn btn-sm btn-ghost" onclick="setRange(90)">90D</button>
+        <button class="btn btn-sm btn-ghost" onclick="setRange(365)">1Y</button>
+        <button class="btn btn-sm btn-ghost" onclick="setRange('all')">All</button>
       </div>
     </div>
 
-    <!-- Combined chart -->
-    <div class="chart-section" id="combinedSection" style="display:none;">
-      <h2>Combined Daily Revenue</h2>
-      <div class="chart-container"><canvas id="combinedChart"></canvas></div>
+    <!-- View tabs -->
+    <div class="section-tabs hidden" id="viewTabs">
+      <button class="section-tab active" onclick="switchView('overview')">Overview</button>
+      <button class="section-tab" onclick="switchView('channels')">By Channel</button>
+      <button class="section-tab" onclick="switchView('daily')">Daily Log</button>
     </div>
 
-    <!-- Per-channel chart -->
-    <div class="chart-section" id="perChannelSection" style="display:none;">
-      <h2>Revenue by Channel</h2>
-      <div class="chart-container"><canvas id="perChannelChart"></canvas></div>
+    <!-- OVERVIEW VIEW -->
+    <div id="viewOverview">
+      <div class="chart-card hidden" id="combinedSection">
+        <h2>Daily Revenue (All Channels Combined)</h2>
+        <div class="chart-container"><canvas id="combinedChart"></canvas></div>
+      </div>
     </div>
 
-    <!-- Day-over-day growth -->
-    <div class="chart-section" id="growthSection" style="display:none;">
-      <h2>Day-over-Day Growth (%)</h2>
-      <div class="chart-container"><canvas id="growthChart"></canvas></div>
+    <!-- CHANNELS VIEW -->
+    <div id="viewChannels" class="hidden">
+      <div class="channel-breakdown" id="channelBreakdown">
+        <h2>Channel Breakdown</h2>
+        <table class="breakdown-table">
+          <thead>
+            <tr>
+              <th>Channel</th>
+              <th>Latest Day</th>
+              <th>Last 7 Days</th>
+              <th>Last 30 Days</th>
+              <th>Total (Period)</th>
+            </tr>
+          </thead>
+          <tbody id="breakdownBody"></tbody>
+        </table>
+      </div>
+      <div class="chart-card">
+        <h2>Revenue by Channel</h2>
+        <div class="chart-container"><canvas id="perChannelChart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- DAILY LOG VIEW -->
+    <div id="viewDaily" class="hidden">
+      <div class="daily-table-wrapper" style="display:block;">
+        <h2>Day-by-Day Revenue Log</h2>
+        <div class="daily-scroll">
+          <table class="daily-table">
+            <thead>
+              <tr id="dailyHeader">
+                <th>Date</th>
+                <!-- dynamic channel columns -->
+                <th>Total</th>
+                <th>Cumulative</th>
+              </tr>
+            </thead>
+            <tbody id="dailyBody"></tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- Empty state -->
     <div class="empty-state" id="emptyState">
-      <h2>No channels connected yet</h2>
-      <p>Click "Connect Channel" to authenticate a YouTube channel via OAuth.<br>
-         You can connect up to 5 channels.</p>
+      <div class="icon">ð</div>
+      <h2>No channels connected</h2>
+      <p>Connect your YouTube channels to start tracking revenue.<br>
+         Data from YouTube Studio is delayed by approximately 2 days.</p>
       <a href="/auth" class="btn">+ Connect Your First Channel</a>
     </div>
   </div>
@@ -276,16 +551,21 @@
     // -----------------------------------------------------------------------
     // State
     // -----------------------------------------------------------------------
-    const COLORS = ['#ff0000', '#00bcd4', '#ff9800', '#8bc34a', '#9c27b0'];
-    let combinedChartObj, perChannelChartObj, growthChartObj;
+    const COLORS = ['#ff3b3b', '#3b82f6', '#f59e0b', '#22c55e', '#a855f7'];
+    let combinedChartObj, perChannelChartObj;
     let revenueData = null;
+    let currentView = 'overview';
 
     // -----------------------------------------------------------------------
-    // Init
+    // Init â set end date to 2 days ago (YouTube data delay)
     // -----------------------------------------------------------------------
-    document.getElementById('endDate').value = new Date().toISOString().slice(0, 10);
+    function getDelayedDate() {
+      const d = new Date();
+      d.setDate(d.getDate() - 2);
+      return d.toISOString().slice(0, 10);
+    }
+    document.getElementById('endDate').value = getDelayedDate();
 
-    // Check for ?connected= toast
     const params = new URLSearchParams(location.search);
     if (params.get('connected')) {
       showToast('Connected: ' + params.get('connected'));
@@ -293,6 +573,19 @@
     }
 
     loadChannels();
+
+    // -----------------------------------------------------------------------
+    // View switching
+    // -----------------------------------------------------------------------
+    function switchView(view) {
+      currentView = view;
+      document.querySelectorAll('.section-tab').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+
+      document.getElementById('viewOverview').classList.toggle('hidden', view !== 'overview');
+      document.getElementById('viewChannels').classList.toggle('hidden', view !== 'channels');
+      document.getElementById('viewDaily').classList.toggle('hidden', view !== 'daily');
+    }
 
     // -----------------------------------------------------------------------
     // Channels
@@ -303,24 +596,19 @@
       const strip = document.getElementById('channelsStrip');
       strip.innerHTML = '';
 
+      const sections = ['statsGrid', 'controlsBar', 'viewTabs', 'combinedSection'];
       if (channels.length === 0) {
         document.getElementById('emptyState').style.display = '';
-        document.getElementById('statsRow').style.display = 'none';
-        document.getElementById('controls').style.display = 'none';
-        document.getElementById('combinedSection').style.display = 'none';
-        document.getElementById('perChannelSection').style.display = 'none';
-        document.getElementById('growthSection').style.display = 'none';
+        sections.forEach(id => document.getElementById(id).classList.add('hidden'));
+        document.getElementById('viewChannels').classList.add('hidden');
+        document.getElementById('viewDaily').classList.add('hidden');
         return;
       }
 
       document.getElementById('emptyState').style.display = 'none';
-      document.getElementById('statsRow').style.display = '';
-      document.getElementById('controls').style.display = '';
-      document.getElementById('combinedSection').style.display = '';
-      document.getElementById('perChannelSection').style.display = '';
-      document.getElementById('growthSection').style.display = '';
+      sections.forEach(id => document.getElementById(id).classList.remove('hidden'));
 
-      channels.forEach((ch, i) => {
+      channels.forEach(ch => {
         const chip = document.createElement('div');
         chip.className = 'channel-chip';
         chip.innerHTML = `
@@ -346,7 +634,6 @@
     async function fetchRevenue() {
       const startDate = document.getElementById('startDate').value;
       const endDate = document.getElementById('endDate').value;
-
       document.getElementById('loading').classList.add('active');
 
       try {
@@ -355,9 +642,10 @@
         updateStats(revenueData);
         renderCombinedChart(revenueData);
         renderPerChannelChart(revenueData);
-        renderGrowthChart(revenueData);
+        renderChannelBreakdown(revenueData);
+        renderDailyLog(revenueData);
       } catch (err) {
-        showToast('Error fetching revenue: ' + err.message);
+        showToast('Error: ' + err.message);
       } finally {
         document.getElementById('loading').classList.remove('active');
       }
@@ -368,27 +656,30 @@
     // -----------------------------------------------------------------------
     function updateStats(data) {
       const totals = data.totals;
-      if (totals.length === 0) return;
+      if (!totals || totals.length === 0) return;
 
-      // Total
       const totalRev = totals.reduce((s, r) => s + r.revenue, 0);
       document.getElementById('totalRevenue').textContent = fmt(totalRev);
 
-      // Yesterday vs day before
-      const yesterday = totals[totals.length - 1];
-      const dayBefore = totals.length > 1 ? totals[totals.length - 2] : null;
-      document.getElementById('yesterdayRevenue').textContent = fmt(yesterday.revenue);
-      if (dayBefore) {
-        setChange('yesterdayChange', yesterday.revenue, dayBefore.revenue);
-      }
+      // Period hint
+      const startDate = document.getElementById('startDate').value;
+      const endDate = document.getElementById('endDate').value;
+      document.getElementById('periodHint').textContent = `(${formatDateShort(startDate)} â ${formatDateShort(endDate)})`;
 
-      // Last 7 days vs prior 7
+      // Latest available day (with date shown)
+      const latest = totals[totals.length - 1];
+      const prev = totals.length > 1 ? totals[totals.length - 2] : null;
+      document.getElementById('latestDayRevenue').textContent = fmt(latest.revenue);
+      document.getElementById('latestDayHint').textContent = `(${formatDateShort(latest.date)})`;
+      if (prev) setChange('latestDayChange', latest.revenue, prev.revenue);
+
+      // Last 7 days
       const last7 = totals.slice(-7).reduce((s, r) => s + r.revenue, 0);
       const prior7 = totals.slice(-14, -7).reduce((s, r) => s + r.revenue, 0);
       document.getElementById('last7Revenue').textContent = fmt(last7);
       if (prior7 > 0) setChange('last7Change', last7, prior7);
 
-      // Last 30 days vs prior 30
+      // Last 30 days
       const last30 = totals.slice(-30).reduce((s, r) => s + r.revenue, 0);
       const prior30 = totals.slice(-60, -30).reduce((s, r) => s + r.revenue, 0);
       document.getElementById('last30Revenue').textContent = fmt(last30);
@@ -399,8 +690,123 @@
       const el = document.getElementById(elId);
       const pct = ((current - previous) / previous) * 100;
       const sign = pct >= 0 ? '+' : '';
-      el.textContent = `${sign}${pct.toFixed(1)}% vs prior period`;
+      const arrow = pct >= 0 ? 'â' : 'â';
+      el.textContent = `${arrow} ${sign}${pct.toFixed(1)}% vs prior`;
       el.className = 'change ' + (pct >= 0 ? 'up' : 'down');
+    }
+
+    // -----------------------------------------------------------------------
+    // Channel breakdown table
+    // -----------------------------------------------------------------------
+    function renderChannelBreakdown(data) {
+      const body = document.getElementById('breakdownBody');
+      body.innerHTML = '';
+
+      let totalLatest = 0, totalL7 = 0, totalL30 = 0, totalAll = 0;
+
+      data.channels.forEach((ch, i) => {
+        const rows = ch.data;
+        const latestDay = rows.length > 0 ? rows[rows.length - 1].revenue : 0;
+        const l7 = rows.slice(-7).reduce((s, r) => s + r.revenue, 0);
+        const l30 = rows.slice(-30).reduce((s, r) => s + r.revenue, 0);
+        const all = rows.reduce((s, r) => s + r.revenue, 0);
+
+        totalLatest += latestDay;
+        totalL7 += l7;
+        totalL30 += l30;
+        totalAll += all;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>
+            <div class="channel-name">
+              <span class="color-dot" style="background:${COLORS[i % COLORS.length]}"></span>
+              <img src="${ch.channelThumbnail}" alt="" />
+              <span>${ch.channelTitle}</span>
+            </div>
+          </td>
+          <td class="revenue-value">${fmt(latestDay)}</td>
+          <td class="revenue-value">${fmt(l7)}</td>
+          <td class="revenue-value">${fmt(l30)}</td>
+          <td class="revenue-value highlight">${fmt(all)}</td>
+        `;
+        body.appendChild(tr);
+      });
+
+      // Total row
+      if (data.channels.length > 1) {
+        const tr = document.createElement('tr');
+        tr.className = 'total-row';
+        tr.innerHTML = `
+          <td>All Channels</td>
+          <td>${fmt(totalLatest)}</td>
+          <td>${fmt(totalL7)}</td>
+          <td>${fmt(totalL30)}</td>
+          <td>${fmt(totalAll)}</td>
+        `;
+        body.appendChild(tr);
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Daily log table
+    // -----------------------------------------------------------------------
+    function renderDailyLog(data) {
+      const header = document.getElementById('dailyHeader');
+      const body = document.getElementById('dailyBody');
+
+      // Build header
+      let headerHTML = '<th>Date</th>';
+      data.channels.forEach(ch => {
+        headerHTML += `<th>${ch.channelTitle}</th>`;
+      });
+      headerHTML += '<th>Total</th><th>Cumulative</th>';
+      header.innerHTML = headerHTML;
+
+      // Build a map: date -> { channelId: revenue }
+      const dateMap = {};
+      const allDates = new Set();
+
+      data.channels.forEach(ch => {
+        ch.data.forEach(row => {
+          allDates.add(row.date);
+          if (!dateMap[row.date]) dateMap[row.date] = {};
+          dateMap[row.date][ch.channelId] = row.revenue;
+        });
+      });
+
+      const sortedDates = [...allDates].sort().reverse(); // newest first
+      let cumulative = data.totals.reduce((s, r) => s + r.revenue, 0);
+
+      // We need cumulative from the top (newest), so compute forward first
+      const totalByDate = {};
+      data.totals.forEach(r => { totalByDate[r.date] = r.revenue; });
+
+      // Calculate cumulative going from oldest to newest
+      const cumulativeMap = {};
+      let runningTotal = 0;
+      [...allDates].sort().forEach(date => {
+        runningTotal += (totalByDate[date] || 0);
+        cumulativeMap[date] = runningTotal;
+      });
+
+      body.innerHTML = '';
+      sortedDates.forEach(date => {
+        const dayTotal = totalByDate[date] || 0;
+        let rowHTML = `<td class="date-col">${formatDateShort(date)}</td>`;
+
+        data.channels.forEach(ch => {
+          const rev = (dateMap[date] && dateMap[date][ch.channelId]) || 0;
+          rowHTML += `<td>${fmt(rev)}</td>`;
+        });
+
+        rowHTML += `<td class="revenue-value highlight">${fmt(dayTotal)}</td>`;
+        rowHTML += `<td class="cumulative">${fmt(cumulativeMap[date])}</td>`;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = rowHTML;
+        body.appendChild(tr);
+      });
     }
 
     // -----------------------------------------------------------------------
@@ -409,16 +815,19 @@
     const chartDefaults = {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
       plugins: {
-        legend: { labels: { color: '#e0e0e0', font: { size: 12 } } },
+        legend: { labels: { color: '#9ca3af', font: { size: 12 }, usePointStyle: true, pointStyle: 'circle', padding: 16 } },
         tooltip: {
           backgroundColor: '#1a1a2e',
-          titleColor: '#e0e0e0',
-          bodyColor: '#e0e0e0',
+          titleColor: '#f0f0f5',
+          bodyColor: '#9ca3af',
           borderColor: '#2a2a3e',
           borderWidth: 1,
+          padding: 10,
+          cornerRadius: 8,
           callbacks: {
-            label: ctx => `${ctx.dataset.label}: $${ctx.parsed.y.toFixed(2)}`
+            label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)} kr`
           }
         }
       },
@@ -426,12 +835,12 @@
         x: {
           type: 'time',
           time: { unit: 'day', tooltipFormat: 'MMM d, yyyy' },
-          grid: { color: 'rgba(255,255,255,0.05)' },
-          ticks: { color: '#888', maxTicksLimit: 15 }
+          grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
+          ticks: { color: '#6b7280', maxTicksLimit: 12, font: { size: 11 } }
         },
         y: {
-          grid: { color: 'rgba(255,255,255,0.05)' },
-          ticks: { color: '#888', callback: v => '$' + v.toFixed(0) }
+          grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
+          ticks: { color: '#6b7280', font: { size: 11 }, callback: v => v.toFixed(0) + ' kr' }
         }
       }
     };
@@ -446,12 +855,15 @@
           datasets: [{
             label: 'Combined Revenue',
             data: data.totals.map(r => ({ x: r.date, y: r.revenue })),
-            borderColor: '#ff0000',
-            backgroundColor: 'rgba(255,0,0,0.1)',
+            borderColor: '#ff3b3b',
+            backgroundColor: 'rgba(255, 59, 59, 0.08)',
             fill: true,
-            tension: 0.3,
+            tension: 0.35,
             pointRadius: 0,
-            pointHitRadius: 8,
+            pointHoverRadius: 5,
+            pointHoverBackgroundColor: '#ff3b3b',
+            pointHitRadius: 10,
+            borderWidth: 2,
           }]
         },
         options: JSON.parse(JSON.stringify(chartDefaults))
@@ -467,9 +879,12 @@
         data: ch.data.map(r => ({ x: r.date, y: r.revenue })),
         borderColor: COLORS[i % COLORS.length],
         backgroundColor: 'transparent',
-        tension: 0.3,
+        tension: 0.35,
         pointRadius: 0,
-        pointHitRadius: 8,
+        pointHoverRadius: 5,
+        pointHoverBackgroundColor: COLORS[i % COLORS.length],
+        pointHitRadius: 10,
+        borderWidth: 2,
       }));
 
       perChannelChartObj = new Chart(ctx, {
@@ -479,50 +894,21 @@
       });
     }
 
-    function renderGrowthChart(data) {
-      const ctx = document.getElementById('growthChart').getContext('2d');
-      if (growthChartObj) growthChartObj.destroy();
-
-      const totals = data.totals;
-      const growthData = [];
-      for (let i = 1; i < totals.length; i++) {
-        const prev = totals[i - 1].revenue;
-        const curr = totals[i].revenue;
-        const pct = prev > 0 ? ((curr - prev) / prev) * 100 : 0;
-        growthData.push({ x: totals[i].date, y: Math.max(-100, Math.min(pct, 500)) });
-      }
-
-      const opts = JSON.parse(JSON.stringify(chartDefaults));
-      opts.scales.y.ticks.callback = v => v.toFixed(0) + '%';
-      opts.plugins.tooltip.callbacks = {
-        label: ctx => `Growth: ${ctx.parsed.y.toFixed(1)}%`
-      };
-
-      growthChartObj = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          datasets: [{
-            label: 'Day-over-Day Growth',
-            data: growthData,
-            backgroundColor: growthData.map(d =>
-              d.y >= 0 ? 'rgba(39,174,96,0.6)' : 'rgba(231,76,60,0.6)'
-            ),
-            borderRadius: 2,
-          }]
-        },
-        options: opts
-      });
-    }
-
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
     function fmt(n) {
-      return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      return n.toLocaleString('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kr';
+    }
+
+    function formatDateShort(dateStr) {
+      const d = new Date(dateStr + 'T00:00:00');
+      return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
     }
 
     function setRange(days) {
       const end = new Date();
+      end.setDate(end.getDate() - 2); // account for 2-day delay
       document.getElementById('endDate').value = end.toISOString().slice(0, 10);
       if (days === 'all') {
         document.getElementById('startDate').value = '2024-01-01';
