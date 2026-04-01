@@ -25,11 +25,25 @@ function loadTokens() {
   if (fs.existsSync(TOKENS_FILE)) {
     return JSON.parse(fs.readFileSync(TOKENS_FILE, 'utf-8'));
   }
+  // Fallback: restore from STORED_TOKENS env var (survives Railway deploys)
+  if (process.env.STORED_TOKENS) {
+    try {
+      const data = JSON.parse(Buffer.from(process.env.STORED_TOKENS, 'base64').toString('utf-8'));
+      fs.writeFileSync(TOKENS_FILE, JSON.stringify(data, null, 2));
+      console.log('Restored tokens from STORED_TOKENS env var');
+      return data;
+    } catch (e) {
+      console.error('Failed to parse STORED_TOKENS:', e.message);
+    }
+  }
   return {};
 }
 
 function saveTokens(data) {
   fs.writeFileSync(TOKENS_FILE, JSON.stringify(data, null, 2));
+  // Log base64 for env var backup
+  const encoded = Buffer.from(JSON.stringify(data)).toString('base64');
+  console.log('TOKENS_BACKUP_BASE64:', encoded);
 }
 
 // ---------------------------------------------------------------------------
@@ -500,6 +514,15 @@ app.get('/api/debug/rawviews', async (req, res) => {
   }
 
   res.json(results);
+});
+
+// ---------------------------------------------------------------------------
+// Admin: export tokens for Railway env var persistence
+// ---------------------------------------------------------------------------
+app.get('/api/admin/export-tokens', (req, res) => {
+  const allTokens = loadTokens();
+  const encoded = Buffer.from(JSON.stringify(allTokens)).toString('base64');
+  res.json({ encoded, channelCount: Object.keys(allTokens).length });
 });
 
 // ---------------------------------------------------------------------------
