@@ -4,6 +4,7 @@ const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const https = require('https');
 
 const app = express();
 app.use(express.json());
@@ -39,11 +40,63 @@ function loadTokens() {
   return {};
 }
 
+// Track which channels have expired/invalid tokens
+const channelHealth = {};  // { channelId: { status: 'ok'|'expired', error: string, lastChecked: Date } }
+
 function saveTokens(data) {
   fs.writeFileSync(TOKENS_FILE, JSON.stringify(data, null, 2));
   // Log base64 for env var backup
   const encoded = Buffer.from(JSON.stringify(data)).toString('base64');
   console.log('TOKENS_BACKUP_BASE64:', encoded);
+  // Auto-update STORED_TOKENS env var on Railway if API token is configured
+  updateRailwayEnvVar(encoded);
+}
+
+// ---------------------------------------------------------------------------
+// Railway API â auto-update STORED_TOKENS env var
+// ---------------------------------------------------------------------------
+
+function updateRailwayEnvVar(base64Tokens) {
+  const railwayToken = process.env.RAILWAY_API_TOKEN;
+  const serviceId = process.env.RAILWAY_SERVICE_ID;
+  const envId = process.env.RAILWAY_ENVIRONMENT_ID;
+  if (!railwayToken || !serviceId || !envId) return;
+
+  const query = `mutation($input: VariableCollectionUpsertInput!) {
+    variableCollectionUpsert(input: $input)
+  }`;
+  const variables = {
+    input: {
+      serviceId,
+      environmentId: envId,
+      variables: { STORED_TOKENS: base64Tokens },
+    },
+  };
+  const body = JSON.stringify({ query, variables });
+
+  const req = https.request({
+    hostname: 'backboard.railway.app',
+    path: '/graphql/v2',
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${railwayToken}`,
+      'Content-Length': Buffer.byteLength(body),
+    },
+  }, (res) => {
+    let data = '';
+    res.on('data', (chunk) => (data += chunk));
+    res.on('end', () => {
+      if (res.statusCode === 200) {
+        console.log('STORED_TOKENS env var auto-updated on Railway');
+      } else {
+        console.error('Failed to update Railway env var:', res.statusCode, data);
+      }
+    });
+  });
+  req.on('error', (e) => console.error('Railway API error:', e.message));
+  req.write(body);
+  req.end();
 }
 
 // ---------------------------------------------------------------------------
@@ -362,16 +415,29 @@ async function fetchAnalyticsForAllChannels({ startDate, endDate, metrics, dimen
         channelThumbnail: data.channelThumbnail,
         data: rows,
       });
+      channelHealth[channelId] = { status: 'ok', error: null, lastChecked: new Date().toISOString() };
     } catch (err) {
       console.error(`Error fetching ${metrics} for ${data.channelTitle}:`, err.message);
       if (err.response) console.error('Error details:', err.response.status, JSON.stringify(err.response.data));
       console.error('Token scopes:', data.tokens.scope);
+
+      const isTokenExpired = err.message.includes('invalid_grant') ||
+        err.message.includes('Token has been expired') ||
+        err.message.includes('Token has been revoked');
+
+      channelHealth[channelId] = {
+        status: isTokenExpired ? 'expired' : 'error',
+        error: err.message,
+        lastChecked: new Date().toISOString(),
+      };
+
       results.push({
         channelId,
         channelTitle: data.channelTitle,
         channelThumbnail: data.channelThumbnail,
         data: [],
         error: err.message,
+        tokenExpired: isTokenExpired,
       });
     }
   }
@@ -515,6 +581,77 @@ app.get('/api/debug/rawviews', async (req, res) => {
 
   res.json(results);
 });
+
+// ---------------------------------------------------------------------------
+// Token health check endpoint
+// ---------------------------------------------------------------------------
+app.get('/api/token-health', async (req, res) => {
+  const allTokens = loadTokens();
+  const results = [];
+
+  for (const [channelId, data] of Object.entries(allTokens)) {
+    // Use cached health if checked within the last 5 minutes
+    if (channelHealth[channelId] && channelHealth[channelId].lastChecked) {
+      const age = Date.now() - new Date(channelHealth[channelId].lastChecked).getTime();
+      if (age < 5 * 60 * 1000) {
+        results.push({
+          channelId,
+          channelTitle: data.channelTitle,
+          ...channelHealth[channelId],
+        });
+        continue;
+      }
+    }
+
+    // Test the token with a lightweight API call
+    const oauth2Client = makeOAuth2Client();
+    oauth2Client.setCredentials(data.tokens);
+    try {
+      const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
+      await youtube.channels.list({ part: 'id', mine: true });
+      channelHealth[channelId] = { status: 'ok', error: null, lastChecked: new Date().toISOString() };
+    } catch (err) {
+      const isTokenExpired = err.message.includes('invalid_grant') ||
+        err.message.includes('Token has been expired') ||
+        err.message.includes('Token has been revoked');
+      channelHealth[channelId] = {
+        status: isTokenExpired ? 'expired' : 'error',
+        error: err.message,
+        lastChecked: new Date().toISOString(),
+      };
+    }
+    results.push({
+      channelId,
+      channelTitle: data.channelTitle,
+      ...channelHealth[channelId],
+    });
+  }
+
+  const expiredCount = results.filter((r) => r.status === 'expired').length;
+  res.json({ channels: results, expiredCount, totalCount: results.length });
+});
+
+// ---------------------------------------------------------------------------
+// Daily token health check (runs every 12 hours)
+// ---------------------------------------------------------------------------
+setInterval(async () => {
+  console.log('Running scheduled token health check...');
+  const allTokens = loadTokens();
+  for (const [channelId, data] of Object.entries(allTokens)) {
+    const oauth2Client = makeOAuth2Client();
+    oauth2Client.setCredentials(data.tokens);
+    try {
+      const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
+      await youtube.channels.list({ part: 'id', mine: true });
+      channelHealth[channelId] = { status: 'ok', error: null, lastChecked: new Date().toISOString() };
+      console.log(`  ${data.channelTitle}: OK`);
+    } catch (err) {
+      const isExpired = err.message.includes('invalid_grant') || err.message.includes('expired') || err.message.includes('revoked');
+      channelHealth[channelId] = { status: isExpired ? 'expired' : 'error', error: err.message, lastChecked: new Date().toISOString() };
+      console.warn(`  ${data.channelTitle}: ${isExpired ? 'EXPIRED' : 'ERROR'} - ${err.message}`);
+    }
+  }
+}, 12 * 60 * 60 * 1000); // every 12 hours
 
 // ---------------------------------------------------------------------------
 // Admin: export tokens for Railway env var persistence
