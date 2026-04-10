@@ -11,7 +11,6 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const PORT = process.env.PORT || 3000;
-const TOKENS_FILE = path.join(__dirname, 'tokens.json');
 const SCOPES = [
   'https://www.googleapis.com/auth/yt-analytics.readonly',
   'https://www.googleapis.com/auth/yt-analytics-monetary.readonly',
@@ -19,41 +18,87 @@ const SCOPES = [
 ];
 
 // ---------------------------------------------------------------------------
-// Helpers â token persistence
-// --------------------------------------------------------------------------
+// Token persistence (Railway Volume > local file > env var)
+// ---------------------------------------------------------------------------
+
+// Railway Volume path (survives deploys). Mount a volume at /data in Railway.
+const VOLUME_TOKENS_FILE = '/data/tokens.json';
+const LOCAL_TOKENS_FILE = path.join(__dirname, 'tokens.json');
+
+function getTokensFilePath() {
+  try {
+    if (fs.existsSync('/data') && fs.statSync('/data').isDirectory()) {
+      console.log('[tokens] Railway Volume detected at /data -- using persistent storage');
+      return VOLUME_TOKENS_FILE;
+    }
+  } catch (e) { /* /data not available */ }
+  console.warn('[tokens] No Railway Volume at /data -- tokens WILL BE LOST on deploy!');
+  return LOCAL_TOKENS_FILE;
+}
+
+const TOKENS_FILE = getTokensFilePath();
 
 function loadTokens() {
+  // 1. Primary file (volume or local)
   if (fs.existsSync(TOKENS_FILE)) {
-    return JSON.parse(fs.readFileSync(TOKENS_FILE, 'utf-8'));
+    try {
+      const data = JSON.parse(fs.readFileSync(TOKENS_FILE, 'utf-8'));
+      if (Object.keys(data).length > 0) return data;
+    } catch (e) {
+      console.error('[tokens] Failed to read ' + TOKENS_FILE + ':', e.message);
+    }
   }
-  // Fallback: restore from STORED_TOKENS env var (survives Railway deploys)
+
+  // 2. Fallback to the other file location
+  const fallbackFile = TOKENS_FILE === VOLUME_TOKENS_FILE ? LOCAL_TOKENS_FILE : VOLUME_TOKENS_FILE;
+  if (fs.existsSync(fallbackFile)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(fallbackFile, 'utf-8'));
+      if (Object.keys(data).length > 0) {
+        console.log('[tokens] Restored from fallback: ' + fallbackFile);
+        fs.writeFileSync(TOKENS_FILE, JSON.stringify(data, null, 2));
+        return data;
+      }
+    } catch (e) { /* not available */ }
+  }
+
+  // 3. STORED_TOKENS env var (last resort)
   if (process.env.STORED_TOKENS) {
     try {
       const data = JSON.parse(Buffer.from(process.env.STORED_TOKENS, 'base64').toString('utf-8'));
-      fs.writeFileSync(TOKENS_FILE, JSON.stringify(data, null, 2));
-      console.log('Restored tokens from STORED_TOKENS env var');
-      return data;
+      if (Object.keys(data).length > 0) {
+        fs.writeFileSync(TOKENS_FILE, JSON.stringify(data, null, 2));
+        console.log('[tokens] Restored from STORED_TOKENS env var');
+        return data;
+      }
     } catch (e) {
-      console.error('Failed to parse STORED_TOKENS:', e.message);
+      console.error('[tokens] Failed to parse STORED_TOKENS:', e.message);
     }
   }
+
+  console.warn('[tokens] WARNING: No tokens found anywhere');
   return {};
 }
 
-// Track which channels have expired/invalid tokens
-const channelHealth = {};  // { channelId: { status: 'ok'|'expired', error: string, lastChecked: Date } }
+// Track channel token health
+const channelHealth = {};
 
 function saveTokens(data) {
+  // Write to primary location
   fs.writeFileSync(TOKENS_FILE, JSON.stringify(data, null, 2));
-  // Log base64 for env var backup
+
+  // Also write to secondary location for redundancy
+  const secondaryFile = TOKENS_FILE === VOLUME_TOKENS_FILE ? LOCAL_TOKENS_FILE : VOLUME_TOKENS_FILE;
+  try { fs.writeFileSync(secondaryFile, JSON.stringify(data, null, 2)); } catch (e) { /* ok */ }
+
+  // Base64 backup to env var
   const encoded = Buffer.from(JSON.stringify(data)).toString('base64');
   console.log('TOKENS_BACKUP_BASE64:', encoded);
-  // Auto-update STORED_TOKENS env var on Railway if API token is configured
   updateRailwayEnvVar(encoded);
 }
 
 // ---------------------------------------------------------------------------
-// Railway API â auto-update STORED_TOKENS env var
+// Railway API -- auto-update STORED_TOKENS env var
 // ---------------------------------------------------------------------------
 
 function updateRailwayEnvVar(base64Tokens) {
@@ -88,15 +133,67 @@ function updateRailwayEnvVar(base64Tokens) {
     res.on('data', (chunk) => (data += chunk));
     res.on('end', () => {
       if (res.statusCode === 200) {
-        console.log('STORED_TOKENS env var auto-updated on Railway');
+        console.log('[railway] STORED_TOKENS env var auto-updated');
       } else {
-        console.error('Failed to update Railway env var:', res.statusCode, data);
+        console.error('[railway] Failed to update env var:', res.statusCode, data);
       }
     });
   });
-  req.on('error', (e) => console.error('Railway API error:', e.message));
+  req.on('error', (e) => console.error('[railway] API error:', e.message));
   req.write(body);
   req.end();
+}
+
+// ---------------------------------------------------------------------------
+// Proactive token refresh -- refresh ALL tokens on startup + every 6 hours
+// ---------------------------------------------------------------------------
+
+async function refreshAllTokens() {
+  const allTokens = loadTokens();
+  if (Object.keys(allTokens).length === 0) {
+    console.log('[refresh] No channels to refresh');
+    return;
+  }
+
+  let refreshed = 0;
+  let failed = 0;
+
+  for (const [channelId, data] of Object.entries(allTokens)) {
+    if (!data.tokens || !data.tokens.refresh_token) {
+      console.warn('[refresh] ' + data.channelTitle + ': no refresh_token, skipping');
+      channelHealth[channelId] = { status: 'expired', error: 'No refresh token', lastChecked: new Date().toISOString() };
+      failed++;
+      continue;
+    }
+
+    const oauth2Client = makeOAuth2Client();
+    oauth2Client.setCredentials(data.tokens);
+
+    try {
+      // Force a token refresh by requesting new credentials
+      const { credentials } = await oauth2Client.refreshAccessToken();
+      allTokens[channelId].tokens = { ...data.tokens, ...credentials };
+      channelHealth[channelId] = { status: 'ok', error: null, lastChecked: new Date().toISOString() };
+      console.log('[refresh] ' + data.channelTitle + ': OK (new expiry: ' + new Date(credentials.expiry_date).toISOString() + ')');
+      refreshed++;
+    } catch (err) {
+      const isExpired = err.message.includes('invalid_grant') || err.message.includes('expired') || err.message.includes('revoked');
+      channelHealth[channelId] = {
+        status: isExpired ? 'expired' : 'error',
+        error: err.message,
+        lastChecked: new Date().toISOString(),
+      };
+      console.error('[refresh] ' + data.channelTitle + ': FAILED - ' + err.message);
+      failed++;
+    }
+  }
+
+  // Save updated tokens (with new access tokens)
+  if (refreshed > 0) {
+    saveTokens(allTokens);
+  }
+
+  console.log('[refresh] Done: ' + refreshed + ' refreshed, ' + failed + ' failed out of ' + Object.keys(allTokens).length + ' channels');
 }
 
 // ---------------------------------------------------------------------------
@@ -105,7 +202,6 @@ function updateRailwayEnvVar(base64Tokens) {
 
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD;
 
-// Simple session store (in-memory; resets on restart, which is fine)
 const sessions = new Map();
 
 function generateSessionId() {
@@ -123,20 +219,19 @@ function parseCookies(cookieHeader) {
 }
 
 function isAuthenticated(req) {
-  if (!DASHBOARD_PASSWORD) return true; // no password set = open access
+  if (!DASHBOARD_PASSWORD) return true;
   const cookies = parseCookies(req.headers.cookie);
   const sid = cookies['dashboard_session'];
   return sid && sessions.has(sid);
 }
 
-// Login page HTML
 function loginPageHTML(error) {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Login â YouTube Revenue Dashboard</title>
+  <title>Login - YouTube Revenue Dashboard</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -199,7 +294,7 @@ function loginPageHTML(error) {
 </head>
 <body>
   <div class="login-card">
-    <div class="logo">ð</div>
+    <div class="logo">&#128202;</div>
     <h1>YouTube Revenue Dashboard</h1>
     <p>Enter the password to access the dashboard</p>
     ${error ? '<div class="error">Incorrect password. Try again.</div>' : ''}
@@ -212,7 +307,6 @@ function loginPageHTML(error) {
 </html>`;
 }
 
-// Login routes
 app.get('/login', (req, res) => {
   if (isAuthenticated(req)) return res.redirect('/');
   res.send(loginPageHTML(false));
@@ -240,16 +334,14 @@ app.get('/logout', (req, res) => {
   res.redirect('/login');
 });
 
-// Auth-guard middleware (skip /auth and /oauth2callback so OAuth still works)
 app.use((req, res, next) => {
-  if (!DASHBOARD_PASSWORD) return next(); // no password = skip guard
+  if (!DASHBOARD_PASSWORD) return next();
   const openPaths = ['/login', '/auth', '/oauth2callback'];
   if (openPaths.some((p) => req.path.startsWith(p))) return next();
   if (isAuthenticated(req)) return next();
   res.redirect('/login');
 });
 
-// Serve static files AFTER auth guard
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ---------------------------------------------------------------------------
@@ -257,7 +349,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ---------------------------------------------------------------------------
 
 function getRedirectUri() {
-  // In production (Railway), use the RAILWAY_PUBLIC_DOMAIN if available
   if (process.env.RAILWAY_PUBLIC_DOMAIN) {
     return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}/oauth2callback`;
   }
@@ -273,7 +364,7 @@ function makeOAuth2Client() {
 }
 
 // ---------------------------------------------------------------------------
-// Routes â OAuth flow
+// Routes -- OAuth flow
 // ---------------------------------------------------------------------------
 
 app.get('/auth', (req, res) => {
@@ -294,6 +385,7 @@ app.get('/oauth2callback', async (req, res) => {
     const oauth2Client = makeOAuth2Client();
     const { tokens } = await oauth2Client.getToken(code);
     console.log('Token scopes granted:', tokens.scope);
+    console.log('Has refresh_token:', !!tokens.refresh_token);
     oauth2Client.setCredentials(tokens);
 
     const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
@@ -309,8 +401,10 @@ app.get('/oauth2callback', async (req, res) => {
     console.log(`Channel connected: ${channelTitle} (${channelId})`);
 
     const allTokens = loadTokens();
-    allTokens[channelId] = { tokens, channelTitle, channelThumbnail };
+    allTokens[channelId] = { tokens, channelTitle, channelThumbnail, connectedAt: new Date().toISOString() };
     saveTokens(allTokens);
+
+    channelHealth[channelId] = { status: 'ok', error: null, lastChecked: new Date().toISOString() };
 
     res.redirect('/?connected=' + encodeURIComponent(channelTitle));
   } catch (err) {
@@ -321,7 +415,7 @@ app.get('/oauth2callback', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Routes â API
+// Routes -- API
 // ---------------------------------------------------------------------------
 
 app.get('/api/channels', (req, res) => {
@@ -342,7 +436,7 @@ app.delete('/api/channels/:id', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Shared helper â fetches analytics for all channels
+// Shared helper -- fetches analytics for all channels
 // ---------------------------------------------------------------------------
 
 async function fetchAnalyticsForAllChannels({ startDate, endDate, metrics, dimensions, sort, currency, filters, contentTypeFilter }) {
@@ -360,6 +454,7 @@ async function fetchAnalyticsForAllChannels({ startDate, endDate, metrics, dimen
     oauth2Client.setCredentials(data.tokens);
 
     oauth2Client.on('tokens', (newTokens) => {
+      console.log('[auto-refresh] New tokens received for ' + data.channelTitle);
       const all = loadTokens();
       if (all[channelId]) {
         all[channelId].tokens = { ...all[channelId].tokens, ...newTokens };
@@ -388,8 +483,6 @@ async function fetchAnalyticsForAllChannels({ startDate, endDate, metrics, dimen
 
       let rows;
       if (contentTypeFilter) {
-        // When using 'day,creatorContentType' dimensions, rows are [date, contentType, value]
-        // Filter by the requested content type and aggregate by day
         const dayMap = {};
         for (const r of (report.data.rows || [])) {
           const date = r[0];
@@ -419,7 +512,6 @@ async function fetchAnalyticsForAllChannels({ startDate, endDate, metrics, dimen
     } catch (err) {
       console.error(`Error fetching ${metrics} for ${data.channelTitle}:`, err.message);
       if (err.response) console.error('Error details:', err.response.status, JSON.stringify(err.response.data));
-      console.error('Token scopes:', data.tokens.scope);
 
       const isTokenExpired = err.message.includes('invalid_grant') ||
         err.message.includes('Token has been expired') ||
@@ -442,7 +534,6 @@ async function fetchAnalyticsForAllChannels({ startDate, endDate, metrics, dimen
     }
   }
 
-  // Aggregate totals by day
   const dayMap = {};
   for (const ch of results) {
     for (const row of ch.data) {
@@ -517,72 +608,6 @@ app.get('/api/views/shortform', async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Debug endpoint â raw YouTube Analytics API response
-// ---------------------------------------------------------------------------
-
-app.get('/api/debug/rawviews', async (req, res) => {
-  const allTokens = loadTokens();
-  if (Object.keys(allTokens).length === 0) {
-    return res.json({ error: 'No channels connected' });
-  }
-
-  const results = [];
-  for (const [channelId, data] of Object.entries(allTokens)) {
-    const oauth2Client = makeOAuth2Client();
-    oauth2Client.setCredentials(data.tokens);
-
-    try {
-      const ytAnalytics = google.youtubeAnalytics({
-        version: 'v2',
-        auth: oauth2Client,
-      });
-
-      // Try with creatorContentType dimension
-      const report1 = await ytAnalytics.reports.query({
-        ids: `channel==${channelId}`,
-        startDate: '2025-03-01',
-        endDate: '2025-03-29',
-        metrics: 'views',
-        dimensions: 'day,creatorContentType',
-        sort: 'day',
-      });
-
-      // Also try plain views for comparison
-      const report2 = await ytAnalytics.reports.query({
-        ids: `channel==${channelId}`,
-        startDate: '2025-03-01',
-        endDate: '2025-03-29',
-        metrics: 'views',
-        dimensions: 'day',
-        sort: 'day',
-      });
-
-      results.push({
-        channel: data.channelTitle,
-        withContentType: {
-          columnHeaders: report1.data.columnHeaders,
-          rowCount: (report1.data.rows || []).length,
-          sampleRows: (report1.data.rows || []).slice(0, 10),
-        },
-        plainViews: {
-          columnHeaders: report2.data.columnHeaders,
-          rowCount: (report2.data.rows || []).length,
-          sampleRows: (report2.data.rows || []).slice(0, 5),
-        },
-      });
-    } catch (err) {
-      results.push({
-        channel: data.channelTitle,
-        error: err.message,
-        errorDetails: err.response ? err.response.data : null,
-      });
-    }
-  }
-
-  res.json(results);
-});
-
-// ---------------------------------------------------------------------------
 // Token health check endpoint
 // ---------------------------------------------------------------------------
 app.get('/api/token-health', async (req, res) => {
@@ -590,7 +615,6 @@ app.get('/api/token-health', async (req, res) => {
   const results = [];
 
   for (const [channelId, data] of Object.entries(allTokens)) {
-    // Use cached health if checked within the last 5 minutes
     if (channelHealth[channelId] && channelHealth[channelId].lastChecked) {
       const age = Date.now() - new Date(channelHealth[channelId].lastChecked).getTime();
       if (age < 5 * 60 * 1000) {
@@ -603,7 +627,6 @@ app.get('/api/token-health', async (req, res) => {
       }
     }
 
-    // Test the token with a lightweight API call
     const oauth2Client = makeOAuth2Client();
     oauth2Client.setCredentials(data.tokens);
     try {
@@ -628,14 +651,25 @@ app.get('/api/token-health', async (req, res) => {
   }
 
   const expiredCount = results.filter((r) => r.status === 'expired').length;
-  res.json({ channels: results, expiredCount, totalCount: results.length });
+  res.json({
+    channels: results,
+    expiredCount,
+    totalCount: results.length,
+    storagePath: TOKENS_FILE,
+    volumeDetected: TOKENS_FILE === VOLUME_TOKENS_FILE,
+  });
 });
 
 // ---------------------------------------------------------------------------
-// Daily token health check (runs every 12 hours)
+// Token refresh (every 6 hours) + health check (every 12 hours)
 // ---------------------------------------------------------------------------
 setInterval(async () => {
-  console.log('Running scheduled token health check...');
+  console.log('[scheduled] Proactive token refresh...');
+  await refreshAllTokens();
+}, 6 * 60 * 60 * 1000);
+
+setInterval(async () => {
+  console.log('[scheduled] Token health check...');
   const allTokens = loadTokens();
   for (const [channelId, data] of Object.entries(allTokens)) {
     const oauth2Client = makeOAuth2Client();
@@ -644,34 +678,68 @@ setInterval(async () => {
       const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
       await youtube.channels.list({ part: 'id', mine: true });
       channelHealth[channelId] = { status: 'ok', error: null, lastChecked: new Date().toISOString() };
-      console.log(`  ${data.channelTitle}: OK`);
+      console.log('  ' + data.channelTitle + ': OK');
     } catch (err) {
       const isExpired = err.message.includes('invalid_grant') || err.message.includes('expired') || err.message.includes('revoked');
       channelHealth[channelId] = { status: isExpired ? 'expired' : 'error', error: err.message, lastChecked: new Date().toISOString() };
-      console.warn(`  ${data.channelTitle}: ${isExpired ? 'EXPIRED' : 'ERROR'} - ${err.message}`);
+      console.warn('  ' + data.channelTitle + ': ' + (isExpired ? 'EXPIRED' : 'ERROR') + ' - ' + err.message);
     }
   }
-}, 12 * 60 * 60 * 1000); // every 12 hours
+}, 12 * 60 * 60 * 1000);
 
 // ---------------------------------------------------------------------------
-// Admin: export tokens for Railway env var persistence
+// Admin: export tokens
 // ---------------------------------------------------------------------------
 app.get('/api/admin/export-tokens', (req, res) => {
   const allTokens = loadTokens();
   const encoded = Buffer.from(JSON.stringify(allTokens)).toString('base64');
-  res.json({ encoded, channelCount: Object.keys(allTokens).length });
+  res.json({
+    encoded,
+    channelCount: Object.keys(allTokens).length,
+    storagePath: TOKENS_FILE,
+    volumeDetected: TOKENS_FILE === VOLUME_TOKENS_FILE,
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Storage diagnostics endpoint
+// ---------------------------------------------------------------------------
+app.get('/api/admin/storage-status', (req, res) => {
+  const allTokens = loadTokens();
+  const channelNames = Object.values(allTokens).map(d => d.channelTitle);
+  const hasRailwayApiVars = !!(process.env.RAILWAY_API_TOKEN && process.env.RAILWAY_SERVICE_ID && process.env.RAILWAY_ENVIRONMENT_ID);
+
+  res.json({
+    primaryStorage: TOKENS_FILE,
+    volumeDetected: TOKENS_FILE === VOLUME_TOKENS_FILE,
+    channelCount: Object.keys(allTokens).length,
+    channels: channelNames,
+    hasStoredTokensEnv: !!process.env.STORED_TOKENS,
+    hasRailwayApiVars,
+    railwayAutoBackup: hasRailwayApiVars ? 'enabled' : 'DISABLED -- set RAILWAY_API_TOKEN, RAILWAY_SERVICE_ID, RAILWAY_ENVIRONMENT_ID',
+    recommendation: TOKENS_FILE === VOLUME_TOKENS_FILE
+      ? 'Using Railway Volume -- tokens will survive deploys'
+      : hasRailwayApiVars
+        ? 'No volume but Railway API backup is enabled'
+        : 'WARNING: No volume AND no Railway API backup. Tokens WILL be lost on next deploy. Add a Railway Volume at /data or set Railway API env vars.',
+  });
 });
 
 // ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   const domain = process.env.RAILWAY_PUBLIC_DOMAIN;
   const baseUrl = domain ? `https://${domain}` : `http://localhost:${PORT}`;
-  console.log(`\n  YouTube Revenue Dashboard running at ${baseUrl}\n`);
+  console.log(`\n  YouTube Revenue Dashboard running at ${baseUrl}`);
+  console.log(`  Token storage: ${TOKENS_FILE}`);
   console.log(`  To connect a channel, visit: ${baseUrl}/auth\n`);
   if (DASHBOARD_PASSWORD) {
     console.log(`  Dashboard is password-protected.\n`);
   }
+
+  // Proactive token refresh on startup (keeps tokens alive)
+  console.log('[startup] Running proactive token refresh...');
+  await refreshAllTokens();
 });
