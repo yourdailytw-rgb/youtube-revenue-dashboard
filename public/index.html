@@ -447,6 +447,12 @@
     </div>
   </header>
 
+  <!-- Token expiry warning banner -->
+  <div id="tokenWarning" style="display:none; background:linear-gradient(90deg,#7f1d1d,#991b1b); color:#fecaca; padding:12px 24px; text-align:center; font-size:14px; font-weight:500; border-bottom:1px solid #dc2626;">
+    <span id="tokenWarningText"></span>
+    <a href="/auth" style="color:#fff; text-decoration:underline; margin-left:8px; font-weight:600;">Reconnect now &rarr;</a>
+  </div>
+
   <div class="container">
     <div class="channels-strip" id="channelsStrip"></div>
 
@@ -651,6 +657,28 @@
     }
 
     loadChannels();
+    checkTokenHealth();
+
+    async function checkTokenHealth() {
+      try {
+        const res = await fetch('/api/token-health');
+        const health = await res.json();
+        if (health.expiredCount > 0) {
+          const names = health.channels.filter(c => c.status === 'expired').map(c => c.channelTitle).join(', ');
+          document.getElementById('tokenWarningText').textContent =
+            health.expiredCount === health.totalCount
+              ? 'All channel tokens have expired. Data will show as 0 until reconnected.'
+              : health.expiredCount + ' channel(s) need reconnection: ' + names;
+          document.getElementById('tokenWarning').style.display = '';
+        } else {
+          document.getElementById('tokenWarning').style.display = 'none';
+        }
+        // Show storage warning if no volume
+        if (!health.volumeDetected) {
+          console.warn('No Railway Volume detected. Tokens may be lost on deploy.');
+        }
+      } catch (e) { /* silent */ }
+    }
 
     // -----------------------------------------------------------------------
     // Main tab switching (Revenue / Long Form / Short Form)
