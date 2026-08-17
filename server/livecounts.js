@@ -8,23 +8,37 @@
  * because it reads a different, real-time feed — not this API.)
  *
  * THE APPROACH
- * The Data API's channels.list(part=statistics) returns a near-live *cumulative*
- * view count. Snapshot it on a schedule, then difference consecutive snapshots
- * across Pacific-time day boundaries — YouTube's reporting day — to recover how
- * many views a channel got on a day Analytics has not published yet.
+ * The Data API exposes near-live *cumulative* view counters. We snapshot them on
+ * a schedule and difference consecutive snapshots across Pacific-time day
+ * boundaries — YouTube's reporting day — to recover how many views arrived on a
+ * day Analytics has not published yet.
+ *
+ * There are two counters available, and which one we use matters:
+ *
+ *   PER-VIDEO (primary)  videos.list(statistics) per tracked video, summed.
+ *     Updates frequently, so short windows produce real numbers. Measured on
+ *     production: these move within the hour.
+ *
+ *   PER-CHANNEL (fallback)  channels.list(statistics).
+ *     Updates in large, infrequent chunks — differencing it over less than a day
+ *     returns exactly zero, which is why it cannot be the primary source. Kept
+ *     only to cover days the per-video snapshots miss.
  *
  * KNOWN LIMITS, stated plainly:
- *   - the cumulative counter is rounded and refreshes periodically, so a single
- *     day's delta is approximate
- *   - it is a COMBINED count; long-form and Shorts are split using the channel's
- *     own recent ratio from Analytics
- *   - it needs snapshots either side of a day boundary, so the first useful
- *     numbers appear a day after polling starts
+ *   - the per-video sum covers the 80 tracked videos per channel, not the whole
+ *     back catalogue, so it UNDERSTATES the channel total by whatever the long
+ *     tail contributes
+ *   - counters are rounded, so a single day's delta is approximate
+ *   - both counters are COMBINED figures; long-form and Shorts are split using
+ *     the channel's own recent ratio from Analytics
+ *   - a whole-day figure needs snapshots either side of a day boundary; before
+ *     that, the day is reported as partial with the hours actually covered
  *
  * Because those limits are real, every derived day is reconciled against
- * Analytics once it finally reports, and the error is recorded in live_accuracy.
- * That table is the evidence for whether this feed can be trusted — it is
- * surfaced in the UI rather than hidden.
+ * Analytics once it finally reports. The error is recorded in live_accuracy, and
+ * the median ratio becomes a per-channel calibration factor that corrects for
+ * the untracked long tail. That table is the evidence for whether this feed can
+ * be trusted, and it is surfaced in the UI rather than hidden.
  */
 
 const { google } = require('googleapis');
@@ -122,6 +136,95 @@ function recentSplitRatio(channelId, referenceDate) {
 }
 
 /**
+ * Per-day view counts derived by summing PER-VIDEO counter deltas.
+ *
+ * This is the primary source, and it exists because the channel-level counter
+ * turned out to be unusable for this: it updates in large infrequent chunks, so
+ * differencing it over anything short of a day returns zero. Per-video counters
+ * update far more often — measurably so; they are what makes the velocity in the
+ * Viral tab work.
+ *
+ * The trade-off is coverage: we track 80 videos per channel, not the entire
+ * back catalogue, so the sum understates the channel's true total by whatever
+ * the long tail contributes. That is why every derived day is reconciled against
+ * Analytics and a per-channel calibration factor is learned from the result —
+ * see calibrationFactor() below.
+ */
+function deriveFromVideoSnapshots(channelId, lastAnalytics) {
+  const rows = db.getChannelVideoSnapshots(channelId, addDays(lastAnalytics, -1));
+  if (rows.length < 2) return new Map();
+
+  // Group by video, then take each video's closing counter per reporting day.
+  const byVideo = new Map();
+  for (const row of rows) {
+    if (row.view_count == null) continue;
+    if (!byVideo.has(row.video_id)) byVideo.set(row.video_id, []);
+    byVideo.get(row.video_id).push(row);
+  }
+
+  /** date -> { views, videos, firstSnapshot, lastSnapshot } */
+  const byDate = new Map();
+
+  for (const snaps of byVideo.values()) {
+    const closingByDate = new Map();
+    const firstByDate = new Map();
+    for (const snap of snaps) {
+      const ptDate = ptDateOf(new Date(snap.captured_at));
+      closingByDate.set(ptDate, snap);
+      if (!firstByDate.has(ptDate)) firstByDate.set(ptDate, snap);
+    }
+
+    for (const [date, close] of closingByDate) {
+      if (date <= lastAnalytics) continue;
+
+      const previous = closingByDate.get(addDays(date, -1));
+      const baseline = previous || firstByDate.get(date);
+      if (!baseline || baseline.captured_at === close.captured_at) continue;
+
+      const delta = close.view_count - baseline.view_count;
+      if (!Number.isFinite(delta) || delta < 0) continue;
+
+      if (!byDate.has(date)) {
+        byDate.set(date, {
+          views: 0,
+          videos: 0,
+          partial: !previous,
+          firstSnapshot: baseline.captured_at,
+          lastSnapshot: close.captured_at,
+        });
+      }
+      const bucket = byDate.get(date);
+      bucket.views += delta;
+      bucket.videos += 1;
+      // The day is only whole-day if every contributing video had a
+      // previous-day baseline.
+      if (!previous) bucket.partial = true;
+      if (baseline.captured_at < bucket.firstSnapshot) bucket.firstSnapshot = baseline.captured_at;
+      if (close.captured_at > bucket.lastSnapshot) bucket.lastSnapshot = close.captured_at;
+    }
+  }
+
+  return byDate;
+}
+
+/**
+ * How much the per-video sum has historically understated Analytics, learned
+ * from the days we have already reconciled. Applied as a multiplier so the
+ * untracked long tail is accounted for instead of silently missing.
+ *
+ * Returns 1 (and calibrated: false) until there are enough samples to trust.
+ */
+function calibrationFactor(channelId) {
+  const rows = db.getLiveAccuracy(channelId);
+  const ratios = rows
+    .filter((r) => r.live_views > 0 && r.analytics_views > 0)
+    .map((r) => r.analytics_views / r.live_views)
+    .filter((v) => v > 0.2 && v < 5); // ignore nonsense
+  if (ratios.length < 3) return { factor: 1, calibrated: false, samples: ratios.length };
+  return { factor: median(ratios), calibrated: true, samples: ratios.length };
+}
+
+/**
  * Turn snapshots into per-day view counts for the days Analytics has not
  * reported yet, for one channel.
  */
@@ -141,14 +244,52 @@ function deriveForChannel(channelId) {
     if (!firstByDate.has(snap.pt_date)) firstByDate.set(snap.pt_date, snap);
   }
 
-  const dates = [...closingByDate.keys()].sort();
   const todayPT = ptDateOf();
   const now = new Date();
   const derived = [];
 
+  // Per-video sums are the primary source; the channel counter is a coarse
+  // fallback for days the video snapshots cannot cover.
+  const videoDays = deriveFromVideoSnapshots(channelId, lastAnalytics);
+  const { factor, calibrated, samples } = calibrationFactor(channelId);
+  const ratio = recentSplitRatio(channelId, lastAnalytics);
+
+  for (const [date, bucket] of videoDays) {
+    if (bucket.views <= 0) continue;
+
+    const views = Math.round(bucket.views * factor);
+    const lfViews = Math.round(views * ratio);
+    const isToday = date === todayPT;
+    const coveredHours =
+      (new Date(bucket.lastSnapshot) - new Date(bucket.firstSnapshot)) / 3600000;
+
+    derived.push({
+      channelId,
+      date,
+      views,
+      lfViews,
+      sfViews: views - lfViews,
+      complete: !bucket.partial && !isToday,
+      partial: bucket.partial || isToday,
+      coveredHours,
+      elapsedHours: isToday ? ptHourOf(now) + now.getUTCMinutes() / 60 : 24,
+      splitRatio: ratio,
+      firstSnapshot: bucket.firstSnapshot,
+      lastSnapshot: bucket.lastSnapshot,
+      isToday,
+      source: 'video-sum',
+      videosCounted: bucket.videos,
+      calibration: { factor, calibrated, samples },
+    });
+  }
+
+  const coveredByVideos = new Set(derived.map((d) => d.date));
+  const dates = [...closingByDate.keys()].sort();
+
   for (const date of dates) {
     // Only fill days Analytics has not published.
     if (date <= lastAnalytics) continue;
+    if (coveredByVideos.has(date)) continue; // per-video sum already has it
 
     const close = closingByDate.get(date);
     const previousClose = closingByDate.get(addDays(date, -1));
@@ -188,7 +329,6 @@ function deriveForChannel(channelId) {
       ? ptHourOf(now) + now.getUTCMinutes() / 60
       : 24;
 
-    const ratio = recentSplitRatio(channelId, lastAnalytics);
     const lfViews = Math.round(views * ratio);
 
     derived.push({
@@ -205,6 +345,7 @@ function deriveForChannel(channelId) {
       firstSnapshot: baseline.captured_at,
       lastSnapshot: close.captured_at,
       isToday,
+      source: 'channel-counter',
     });
   }
 
@@ -435,6 +576,7 @@ function liveStatus() {
         coveredHours: r.covered_hours,
         elapsedHours: r.elapsed_hours,
       })),
+      calibration: calibrationFactor(channel.id),
       accuracySamples: accuracy.length,
       medianAbsError: errors.length ? median(errors) : null,
       recent: accuracy.slice(0, 10),
@@ -458,6 +600,8 @@ module.exports = {
   refreshTrackedVideos,
   pollVideoStats,
   deriveForChannel,
+  deriveFromVideoSnapshots,
+  calibrationFactor,
   reconcileChannel,
   refreshLiveCounts,
   mergeLiveIntoHistory,

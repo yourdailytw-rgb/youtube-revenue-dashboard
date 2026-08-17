@@ -535,6 +535,19 @@ function videoVelocityWindows(videoIds, windows = [6, 24, 72]) {
   return out;
 }
 
+/** All snapshots for a channel's tracked videos, newest last. */
+function getChannelVideoSnapshots(channelId, sinceISO) {
+  return db
+    .prepare(
+      `SELECT vs.video_id, vs.captured_at, vs.view_count
+       FROM video_snapshots vs
+       JOIN videos v ON v.video_id = vs.video_id
+       WHERE v.channel_id = ? AND vs.captured_at >= ?
+       ORDER BY vs.video_id, vs.captured_at`
+    )
+    .all(channelId, sinceISO);
+}
+
 function pruneVideoSnapshots(beforeISO) {
   db.prepare('DELETE FROM video_snapshots WHERE captured_at < ?').run(beforeISO);
 }
@@ -765,6 +778,7 @@ module.exports = {
   getTrackedVideoIds,
   getAllVideos,
   videoVelocityWindows,
+  getChannelVideoSnapshots,
   getCache,
   setCache,
   clearCache,
