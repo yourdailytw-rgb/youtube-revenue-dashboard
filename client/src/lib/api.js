@@ -52,6 +52,10 @@ export const api = {
 
   syncStatus: () => request('/api/sync/status'),
   liveStatus: () => request('/api/live-status'),
+  trending: ({ channels, recentHours, baselineHours, minViewsPerHour, kind, limit } = {}) =>
+    request(
+      `/api/trending${qs({ channels: channels?.join(','), recentHours, baselineHours, minViewsPerHour, kind, limit })}`
+    ),
   livePoll: () => request('/api/live-poll', { method: 'POST' }),
   runSync: (full = false) => request(`/api/sync${qs({ full })}`, { method: 'POST' }),
   refreshTokens: () => request('/api/token-refresh', { method: 'POST' }),

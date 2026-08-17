@@ -12,6 +12,7 @@ const oauth = require('./oauth');
 const youtube = require('./youtube');
 const analytics = require('./analytics');
 const livecounts = require('./livecounts');
+const trending = require('./trending');
 const sync = require('./sync');
 const { estimateChannel } = require('./estimator');
 const { today, addDays, isValidISO, diffDays } = require('./util/dates');
@@ -502,6 +503,31 @@ api.get('/sync/status', (req, res) => res.json(sync.syncStatus()));
 
 /** Live view-count feed: snapshots taken, days derived, and how well they held up. */
 api.get('/live-status', (req, res) => res.json(livecounts.liveStatus()));
+
+/**
+ * Videos that are spiking right now — including old ones picking up again.
+ * Query params tune the detector: recentHours, baselineHours, minViewsPerHour,
+ * spikeThreshold, channels, kind.
+ */
+api.get('/trending', (req, res) => {
+  const opts = {};
+  if (req.query.recentHours) opts.recentWindowHours = Math.min(72, Math.max(1, Number(req.query.recentHours)));
+  if (req.query.baselineHours) opts.baselineWindowHours = Math.min(168, Math.max(6, Number(req.query.baselineHours)));
+  if (req.query.minViewsPerHour) opts.minViewsPerHour = Math.max(0, Number(req.query.minViewsPerHour));
+  if (req.query.spikeThreshold) opts.spikeThreshold = Math.max(1, Number(req.query.spikeThreshold));
+
+  const result = trending.detect(opts);
+
+  const requested = req.query.channels
+    ? String(req.query.channels).split(',').map((s) => s.trim()).filter(Boolean)
+    : null;
+
+  let videos = result.videos;
+  if (requested?.length) videos = videos.filter((v) => requested.includes(v.channelId));
+  if (req.query.kind) videos = videos.filter((v) => v.classification.kind === req.query.kind);
+
+  res.json({ ...result, videos: videos.slice(0, Number(req.query.limit) || 50) });
+});
 
 api.post('/live-poll', async (req, res) => {
   try {

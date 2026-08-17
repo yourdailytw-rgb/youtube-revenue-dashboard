@@ -10,7 +10,7 @@
     "build": "npm --prefix client install --no-audit --no-fund && npm --prefix client run build",
     "seed": "node scripts/seed-mock.js",
     "backtest": "node scripts/backtest.js",
-    "test": "node scripts/test-estimator.js"
+    "test": "node scripts/test-estimator.js && node scripts/test-livecounts.js && node scripts/test-trending.js"
   },
   "engines": {
     "node": ">=24.0.0"

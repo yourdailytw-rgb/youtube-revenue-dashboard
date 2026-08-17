@@ -7,6 +7,7 @@ import {
   Film,
   Zap,
   TrendingUp,
+  Flame,
   Settings,
   AlertCircle,
   Download,
@@ -22,6 +23,7 @@ import { MonthsView } from './components/MonthsView';
 import { DailyView } from './components/DailyView';
 import { TrendsView } from './components/TrendsView';
 import { VideosView } from './components/VideosView';
+import { TrendingView } from './components/TrendingView';
 import { EstimatorView } from './components/EstimatorView';
 import { SettingsView } from './components/SettingsView';
 import { Tabs, Card, Button, EmptyState, Skeleton } from './components/ui';
@@ -35,6 +37,7 @@ const TABS = [
   { id: 'months', label: 'Months', icon: <CalendarRange size={13} /> },
   { id: 'trends', label: 'Trends', icon: <TrendingUp size={13} /> },
   { id: 'videos', label: 'Videos', icon: <Film size={13} /> },
+  { id: 'trending', label: 'Viral', icon: <Flame size={13} /> },
   { id: 'daily', label: 'Daily log', icon: <Table2 size={13} /> },
   { id: 'estimator', label: 'Estimator', icon: <Zap size={13} /> },
   { id: 'settings', label: 'Settings', icon: <Settings size={13} /> },
@@ -222,7 +225,7 @@ export default function App() {
           />
 
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            {state.tab !== 'settings' && state.tab !== 'estimator' && (
+            {state.tab !== 'settings' && state.tab !== 'estimator' && state.tab !== 'trending' && (
               <>
                 <ChannelFilter
                   channels={channels}
@@ -362,6 +365,10 @@ export default function App() {
               ) : (
                 <DailyView data={data} exportUrl={exportUrl} channelExportUrl={channelExportUrl} />
               ))}
+
+            {state.tab === 'trending' && (
+              <TrendingView channels={state.channels} allChannels={channels} />
+            )}
 
             {state.tab === 'estimator' && <EstimatorView data={data} />}
 

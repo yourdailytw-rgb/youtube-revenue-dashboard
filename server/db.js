@@ -200,6 +200,11 @@ addColumnIfMissing('daily_metrics', 'views_source', "TEXT DEFAULT 'analytics'");
 addColumnIfMissing('live_daily', 'covered_hours', 'REAL');
 addColumnIfMissing('live_daily', 'elapsed_hours', 'REAL');
 addColumnIfMissing('live_daily', 'partial', 'INTEGER DEFAULT 0');
+// Lifetime counters on the video row, so popular back-catalogue videos can be
+// tracked for spikes — not just recent uploads.
+addColumnIfMissing('videos', 'lifetime_views', 'INTEGER');
+addColumnIfMissing('videos', 'lifetime_likes', 'INTEGER');
+addColumnIfMissing('videos', 'lifetime_comments', 'INTEGER');
 
 // ---------------------------------------------------------------------------
 // Channels
@@ -387,14 +392,22 @@ function pruneSettledEstimates() {
 // Videos + caches
 // ---------------------------------------------------------------------------
 
-function upsertVideo({ videoId, channelId, title, thumbnail, publishedAt, durationSec, isShort }) {
+function upsertVideo({
+  videoId, channelId, title, thumbnail, publishedAt, durationSec, isShort,
+  lifetimeViews, lifetimeLikes, lifetimeComments,
+}) {
   db.prepare(
-    `INSERT INTO videos (video_id, channel_id, title, thumbnail, published_at, duration_sec, is_short, fetched_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO videos (video_id, channel_id, title, thumbnail, published_at, duration_sec,
+                         is_short, lifetime_views, lifetime_likes, lifetime_comments, fetched_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(video_id) DO UPDATE SET
        title = excluded.title, thumbnail = excluded.thumbnail,
        published_at = excluded.published_at, duration_sec = excluded.duration_sec,
-       is_short = excluded.is_short, fetched_at = excluded.fetched_at`
+       is_short = excluded.is_short, fetched_at = excluded.fetched_at,
+       -- keep the previous value when a caller does not supply counters
+       lifetime_views = COALESCE(excluded.lifetime_views, videos.lifetime_views),
+       lifetime_likes = COALESCE(excluded.lifetime_likes, videos.lifetime_likes),
+       lifetime_comments = COALESCE(excluded.lifetime_comments, videos.lifetime_comments)`
   ).run(
     videoId,
     channelId ?? null,
@@ -403,6 +416,9 @@ function upsertVideo({ videoId, channelId, title, thumbnail, publishedAt, durati
     publishedAt ?? null,
     durationSec ?? null,
     isShort ? 1 : 0,
+    lifetimeViews ?? null,
+    lifetimeLikes ?? null,
+    lifetimeComments ?? null,
     new Date().toISOString()
   );
 }
@@ -464,27 +480,109 @@ function videoVelocity(videoIds, windowHours = 24) {
   return out;
 }
 
+/**
+ * Views-per-hour over several windows at once, from one pass over the snapshots.
+ * Comparing a short window against a long one is what reveals acceleration —
+ * the signature of something going viral.
+ */
+function videoVelocityWindows(videoIds, windows = [6, 24, 72]) {
+  if (!videoIds.length) return new Map();
+  const longest = Math.max(...windows);
+  const since = new Date(Date.now() - longest * 3600 * 1000).toISOString();
+  const marks = videoIds.map(() => '?').join(',');
+
+  const rows = db
+    .prepare(
+      `SELECT video_id, captured_at, view_count FROM video_snapshots
+       WHERE video_id IN (${marks}) AND captured_at >= ?
+       ORDER BY video_id, captured_at`
+    )
+    .all(...videoIds, since);
+
+  const byVideo = new Map();
+  for (const row of rows) {
+    if (row.view_count == null) continue;
+    if (!byVideo.has(row.video_id)) byVideo.set(row.video_id, []);
+    byVideo.get(row.video_id).push(row);
+  }
+
+  const now = Date.now();
+  const out = new Map();
+
+  for (const [videoId, snaps] of byVideo) {
+    if (snaps.length < 2) continue;
+    const latest = snaps[snaps.length - 1];
+    const result = { latestViews: latest.view_count, samples: snaps.length, windows: {} };
+
+    for (const hours of windows) {
+      const cutoff = now - hours * 3600 * 1000;
+      // Earliest snapshot at or after the cutoff gives this window's baseline.
+      const baseline = snaps.find((s) => new Date(s.captured_at).getTime() >= cutoff) || snaps[0];
+      const spanHours = (new Date(latest.captured_at) - new Date(baseline.captured_at)) / 3600000;
+      if (spanHours <= 0) continue;
+      const gained = latest.view_count - baseline.view_count;
+      if (gained < 0) continue;
+      result.windows[hours] = {
+        viewsPerHour: gained / spanHours,
+        gained,
+        spanHours,
+      };
+    }
+
+    if (Object.keys(result.windows).length) out.set(videoId, result);
+  }
+
+  return out;
+}
+
 function pruneVideoSnapshots(beforeISO) {
   db.prepare('DELETE FROM video_snapshots WHERE captured_at < ?').run(beforeISO);
 }
 
-function getTrackedVideoIds(limitPerChannel = 60) {
-  // Most recently published videos per channel — where velocity actually matters.
-  return db
-    .prepare(
-      `SELECT video_id, channel_id FROM videos
-       WHERE published_at IS NOT NULL
-       ORDER BY published_at DESC`
-    )
-    .all()
-    .reduce((acc, row) => {
-      const count = acc.counts.get(row.channel_id) || 0;
-      if (count < limitPerChannel) {
-        acc.ids.push(row.video_id);
-        acc.counts.set(row.channel_id, count + 1);
-      }
-      return acc;
-    }, { ids: [], counts: new Map() }).ids;
+/**
+ * Which videos to snapshot for velocity.
+ *
+ * Deliberately a UNION of two sets: the newest uploads (where a launch surge
+ * happens) and the most-viewed back catalogue (where an old video can suddenly
+ * pick up traction again). Tracking only recent uploads would make resurgences
+ * invisible, which is precisely the case worth catching.
+ */
+function getTrackedVideoIds({ recentPerChannel = 40, popularPerChannel = 40 } = {}) {
+  const ids = new Set();
+
+  /** Take the first N rows per channel from an ordered query. */
+  const takePerChannel = (sql, perChannel) => {
+    const counts = new Map();
+    for (const row of db.prepare(sql).all()) {
+      const seen = counts.get(row.channel_id) || 0;
+      if (seen >= perChannel) continue;
+      counts.set(row.channel_id, seen + 1);
+      ids.add(row.video_id);
+    }
+  };
+
+  // Newest uploads — where a launch surge shows up.
+  takePerChannel(
+    `SELECT video_id, channel_id FROM videos
+     WHERE published_at IS NOT NULL
+     ORDER BY published_at DESC`,
+    recentPerChannel
+  );
+
+  // Biggest back catalogue — where an old video can suddenly pick up again.
+  takePerChannel(
+    `SELECT video_id, channel_id FROM videos
+     WHERE lifetime_views IS NOT NULL
+     ORDER BY lifetime_views DESC`,
+    popularPerChannel
+  );
+
+  return [...ids];
+}
+
+/** Every video we have metadata for, for spike analysis. */
+function getAllVideos() {
+  return db.prepare('SELECT * FROM videos').all();
 }
 
 function getCache(key, maxAgeMs) {
@@ -665,6 +763,8 @@ module.exports = {
   videoVelocity,
   pruneVideoSnapshots,
   getTrackedVideoIds,
+  getAllVideos,
+  videoVelocityWindows,
   getCache,
   setCache,
   clearCache,
