@@ -49,6 +49,8 @@ export const api = {
   estimates: (channel) => request(`/api/estimates${qs({ channel })}`),
 
   syncStatus: () => request('/api/sync/status'),
+  liveStatus: () => request('/api/live-status'),
+  livePoll: () => request('/api/live-poll', { method: 'POST' }),
   runSync: (full = false) => request(`/api/sync${qs({ full })}`, { method: 'POST' }),
   refreshTokens: () => request('/api/token-refresh', { method: 'POST' }),
   tokenHealth: () => request('/api/token-health'),

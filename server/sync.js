@@ -13,6 +13,7 @@ const db = require('./db');
 const { loadTokens, channelHealth } = require('./tokens');
 const { clientForChannel, isExpiredError } = require('./oauth');
 const youtube = require('./youtube');
+const livecounts = require('./livecounts');
 const { estimateChannel } = require('./estimator');
 const { today, addDays, maxISO } = require('./util/dates');
 
@@ -81,8 +82,12 @@ async function syncChannel(channelId, tokenData, { full = false } = {}) {
 /** Recompute estimates for one channel from its recent history. */
 function recomputeChannelEstimates(channelId) {
   const start = addDays(today(), -ESTIMATOR_HISTORY_DAYS);
-  const history = db.getChannelDaily(channelId, start, today());
-  if (history.length === 0) return null;
+  const reported = db.getChannelDaily(channelId, start, today());
+  if (reported.length === 0) return null;
+
+  // Overlay live-derived view counts so the estimator has days to model — the
+  // Analytics API alone never gives views ahead of revenue.
+  const history = livecounts.mergeLiveIntoHistory(channelId, reported);
 
   const result = estimateChannel(history);
   for (const est of result.estimates) {
@@ -202,6 +207,21 @@ function startScheduler() {
     syncAll().catch((err) => console.error('[sync] Scheduled run failed:', err.message));
   }, ms);
   console.log(`[sync] Scheduler started — every ${config.SYNC_INTERVAL_MINUTES} minutes`);
+
+  // Live view counts poll far more often than the Analytics sync: they are the
+  // only source of same-day data, and each snapshot sharpens the day boundary.
+  const liveMs = config.LIVE_POLL_MINUTES * 60 * 1000;
+  const runLive = async () => {
+    try {
+      await livecounts.refreshLiveCounts();
+      recomputeAllEstimates();
+    } catch (err) {
+      console.error('[live] Poll failed:', err.message);
+    }
+  };
+  setInterval(runLive, liveMs);
+  runLive();
+  console.log(`[live] View-count polling started — every ${config.LIVE_POLL_MINUTES} minutes`);
 }
 
 module.exports = {

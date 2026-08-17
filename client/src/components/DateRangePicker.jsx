@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/style.css';
 import clsx from 'clsx';
-import { Calendar, ChevronDown, ChevronLeft, ChevronRight, Check } from 'lucide-react';
+import { Calendar, ChevronDown, ChevronLeft, ChevronRight, Check, Infinity } from 'lucide-react';
 import { Button } from './ui';
 import { formatDate, formatMonth } from '../lib/format';
 import {
@@ -114,6 +114,31 @@ export function DateRangePicker({ start, end, onChange, earliest }) {
           <div className="flex flex-col sm:flex-row">
             {/* Presets */}
             <div className="w-full shrink-0 border-b border-line p-2 sm:w-44 sm:border-b-0 sm:border-r">
+              {/* All time gets its own button rather than being buried in a
+                  group — it is the one range people reach for constantly. */}
+              <button
+                onClick={() => {
+                  const all = presets.find((p) => p.id === 'all');
+                  apply(all.start, all.end);
+                }}
+                className={clsx(
+                  'mb-2 flex w-full items-center justify-between rounded-lg border px-2.5 py-2 text-[13px] font-semibold transition-colors',
+                  activePreset === 'all'
+                    ? 'border-accent bg-accent/15 text-accent'
+                    : 'border-line bg-surface-2 text-ink hover:border-accent/50'
+                )}
+              >
+                <span className="flex items-center gap-1.5">
+                  <Infinity size={14} />
+                  All time
+                </span>
+                {activePreset === 'all' ? (
+                  <Check size={13} />
+                ) : (
+                  earliest && <span className="text-[10px] font-normal text-ink-dim">{earliest.slice(0, 4)}→</span>
+                )}
+              </button>
+
               <div className="max-h-[360px] overflow-y-auto">
                 {groups.map((group) => (
                   <div key={group} className="mb-1">
@@ -121,7 +146,7 @@ export function DateRangePicker({ start, end, onChange, earliest }) {
                       {group}
                     </p>
                     {presets
-                      .filter((p) => p.group === group)
+                      .filter((p) => p.group === group && p.id !== 'all')
                       .map((preset) => (
                         <button
                           key={preset.id}

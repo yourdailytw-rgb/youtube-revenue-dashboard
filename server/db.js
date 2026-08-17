@@ -117,7 +117,68 @@ CREATE TABLE IF NOT EXISTS sync_state (
   key    TEXT PRIMARY KEY,
   value  TEXT
 );
+
+-- ---------------------------------------------------------------------------
+-- Live view counts
+--
+-- The Analytics API reports views AND revenue with the same ~2-3 day lag, so it
+-- can never tell us about today. The Data API's channels.list(statistics)
+-- returns a near-live *cumulative* view count instead. We snapshot that on a
+-- schedule and difference consecutive snapshots across Pacific-time day
+-- boundaries (YouTube's reporting day) to recover per-day views for the days
+-- Analytics has not published yet.
+--
+-- These are kept in their own tables, never written into daily_metrics, so
+-- reported figures and derived figures never get mixed up.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS view_snapshots (
+  channel_id   TEXT NOT NULL,
+  captured_at  TEXT NOT NULL,
+  pt_date      TEXT NOT NULL,
+  view_count   INTEGER,
+  subscriber_count INTEGER,
+  video_count  INTEGER,
+  PRIMARY KEY (channel_id, captured_at)
+);
+
+CREATE INDEX IF NOT EXISTS idx_snapshots_ptdate ON view_snapshots(channel_id, pt_date);
+
+CREATE TABLE IF NOT EXISTS live_daily (
+  channel_id     TEXT NOT NULL,
+  date           TEXT NOT NULL,
+  views          INTEGER,
+  lf_views       INTEGER,
+  sf_views       INTEGER,
+  complete       INTEGER DEFAULT 0,
+  split_ratio    REAL,
+  first_snapshot TEXT,
+  last_snapshot  TEXT,
+  computed_at    TEXT,
+  PRIMARY KEY (channel_id, date)
+);
+
+-- How well a live-derived day matched Analytics once it finally reported.
+-- This is what proves (or disproves) that the live feed is trustworthy.
+CREATE TABLE IF NOT EXISTS live_accuracy (
+  channel_id      TEXT NOT NULL,
+  date            TEXT NOT NULL,
+  live_views      INTEGER,
+  analytics_views INTEGER,
+  pct_error       REAL,
+  recorded_at     TEXT,
+  PRIMARY KEY (channel_id, date)
+);
 `);
+
+/** Add a column to an existing table when it is missing (SQLite has no IF NOT EXISTS). */
+function addColumnIfMissing(table, column, definition) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+addColumnIfMissing('daily_metrics', 'views_source', "TEXT DEFAULT 'analytics'");
 
 // ---------------------------------------------------------------------------
 // Channels
@@ -186,6 +247,7 @@ const DAILY_COLUMNS = [
   'shares',
   'revenue_present',
   'views_present',
+  'views_source',
 ];
 
 /**
@@ -353,6 +415,91 @@ function clearCache() {
 }
 
 // ---------------------------------------------------------------------------
+// Live view counts
+// ---------------------------------------------------------------------------
+
+function insertSnapshot({ channelId, capturedAt, ptDate, viewCount, subscriberCount, videoCount }) {
+  db.prepare(
+    `INSERT INTO view_snapshots (channel_id, captured_at, pt_date, view_count, subscriber_count, video_count)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(channel_id, captured_at) DO NOTHING`
+  ).run(channelId, capturedAt, ptDate, viewCount ?? null, subscriberCount ?? null, videoCount ?? null);
+}
+
+function getSnapshots(channelId, sinceISO) {
+  return db
+    .prepare(
+      `SELECT * FROM view_snapshots WHERE channel_id = ? AND captured_at >= ? ORDER BY captured_at`
+    )
+    .all(channelId, sinceISO);
+}
+
+/** Keep the snapshot table from growing without bound. */
+function pruneSnapshots(beforeISO) {
+  db.prepare('DELETE FROM view_snapshots WHERE captured_at < ?').run(beforeISO);
+}
+
+function upsertLiveDaily(row) {
+  db.prepare(
+    `INSERT INTO live_daily (channel_id, date, views, lf_views, sf_views, complete, split_ratio,
+                             first_snapshot, last_snapshot, computed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(channel_id, date) DO UPDATE SET
+       views = excluded.views, lf_views = excluded.lf_views, sf_views = excluded.sf_views,
+       complete = excluded.complete, split_ratio = excluded.split_ratio,
+       first_snapshot = excluded.first_snapshot, last_snapshot = excluded.last_snapshot,
+       computed_at = excluded.computed_at`
+  ).run(
+    row.channelId,
+    row.date,
+    row.views ?? null,
+    row.lfViews ?? null,
+    row.sfViews ?? null,
+    row.complete ? 1 : 0,
+    row.splitRatio ?? null,
+    row.firstSnapshot ?? null,
+    row.lastSnapshot ?? null,
+    new Date().toISOString()
+  );
+}
+
+function getLiveDaily(channelIds, start, end) {
+  if (!channelIds || channelIds.length === 0) return [];
+  const marks = channelIds.map(() => '?').join(',');
+  return db
+    .prepare(
+      `SELECT * FROM live_daily WHERE channel_id IN (${marks}) AND date >= ? AND date <= ? ORDER BY date`
+    )
+    .all(...channelIds, start, end);
+}
+
+function getChannelLiveDaily(channelId) {
+  return db.prepare('SELECT * FROM live_daily WHERE channel_id = ? ORDER BY date').all(channelId);
+}
+
+function deleteLiveDaily(channelId, date) {
+  db.prepare('DELETE FROM live_daily WHERE channel_id = ? AND date = ?').run(channelId, date);
+}
+
+function recordLiveAccuracy({ channelId, date, liveViews, analyticsViews }) {
+  const pctError = analyticsViews > 0 ? (liveViews - analyticsViews) / analyticsViews : null;
+  db.prepare(
+    `INSERT INTO live_accuracy (channel_id, date, live_views, analytics_views, pct_error, recorded_at)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(channel_id, date) DO UPDATE SET
+       live_views = excluded.live_views, analytics_views = excluded.analytics_views,
+       pct_error = excluded.pct_error, recorded_at = excluded.recorded_at`
+  ).run(channelId, date, liveViews, analyticsViews, pctError, new Date().toISOString());
+  return pctError;
+}
+
+function getLiveAccuracy(channelId) {
+  return db
+    .prepare('SELECT * FROM live_accuracy WHERE channel_id = ? ORDER BY date DESC LIMIT 30')
+    .all(channelId);
+}
+
+// ---------------------------------------------------------------------------
 // Sync state
 // ---------------------------------------------------------------------------
 
@@ -403,6 +550,15 @@ module.exports = {
   saveEstimate,
   getEstimates,
   pruneSettledEstimates,
+  insertSnapshot,
+  getSnapshots,
+  pruneSnapshots,
+  upsertLiveDaily,
+  getLiveDaily,
+  getChannelLiveDaily,
+  deleteLiveDaily,
+  recordLiveAccuracy,
+  getLiveAccuracy,
   upsertVideo,
   getVideos,
   getCache,

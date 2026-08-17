@@ -188,6 +188,9 @@ async function fetchDailyMetrics({ auth, channelId, start, end, currency = confi
       values.sf_views = values.sf_views ?? 0;
       values.lf_watch_minutes = values.lf_watch_minutes ?? 0;
       values.sf_watch_minutes = values.sf_watch_minutes ?? 0;
+      // Marks these as reported figures, as opposed to the live-counter
+      // estimates that livecounts.js derives for more recent days.
+      values.views_source = 'analytics';
     }
   }
 

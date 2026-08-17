@@ -52,16 +52,23 @@ export function MainChart({ data, metric, onMetricChange, compareLabel }) {
         last = day.date;
       }
 
-      const value = day[config.dayKey] ?? 0;
+      // A day YouTube has not reported is a GAP, not a zero. Plotting it as 0
+      // drops the line to the floor and makes it look like revenue collapsed.
+      const isRevenueMetric = config.id === 'revenue';
+      const noData = isRevenueMetric ? !day.hasRevenueData : !day.hasData;
+
+      const value = noData ? null : (day[config.dayKey] ?? 0);
       const compareDay = compare[index];
 
       return {
         date: day.date,
         value,
+        noData,
         // Reported series stops where estimation begins…
-        reported: isEst ? null : value,
+        reported: isEst || noData ? null : value,
         // …and the modelled series starts one day early so the lines join up.
         estimated: isEst ? value : null,
+        awaitingData: noData && !isEst,
         low: isEst ? day.effectiveLow : null,
         band: isEst ? Math.max(0, (day.effectiveHigh ?? 0) - (day.effectiveLow ?? 0)) : null,
         isEstimated: isEst,
@@ -351,13 +358,24 @@ function ChartTooltip({ active, payload, label, config, channels, chartType, com
       ) : (
         <div className="space-y-1">
           <div className="flex items-center justify-between gap-4 text-xs">
-            <span className="text-ink-dim">{row.isEstimated ? 'Estimated' : config.label}</span>
+            <span className="text-ink-dim">
+              {row.awaitingData ? 'Not reported yet' : row.isEstimated ? 'Estimated' : config.label}
+            </span>
             <span
-              className={clsx('font-semibold tabular', row.isEstimated ? 'text-est' : 'text-ink')}
+              className={clsx(
+                'font-semibold tabular',
+                row.awaitingData ? 'text-ink-dim' : row.isEstimated ? 'text-est' : 'text-ink'
+              )}
             >
-              {config.format(row.value)}
+              {row.awaitingData ? '—' : config.format(row.value)}
             </span>
           </div>
+
+          {row.awaitingData && (
+            <p className="text-[10px] text-ink-dim">
+              YouTube has not published this day yet — it is not zero.
+            </p>
+          )}
 
           {row.isEstimated && row.band > 0 && (
             <div className="flex items-center justify-between gap-4 text-xs">

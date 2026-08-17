@@ -51,6 +51,8 @@ const emptyDay = (date) => {
   day.isEstimated = false;
   day.hasRevenue = false;
   day.hasViews = false;
+  day.viewsAreLive = false;
+  day.liveComplete = false;
   return day;
 };
 
@@ -72,6 +74,12 @@ function addEstimate(day, est) {
 
 /** Effective revenue + derived rates, applied once a day is fully assembled. */
 function finalizeDay(day) {
+  // A day with no reported revenue and no estimate has NO DATA — it is not a
+  // zero-revenue day. Conflating the two drags charts to the floor and poisons
+  // averages, so it is flagged here and rendered as a gap downstream.
+  day.hasData = day.hasRevenue || day.hasViews || day.isEstimated;
+  day.hasRevenueData = day.hasRevenue || day.isEstimated;
+
   // A day is "estimated" when at least one channel's revenue had to be modelled.
   day.effectiveRevenue = day.revenue + day.estimatedRevenue;
   day.effectiveLow = day.revenue + (day.isEstimated ? day.estimatedLow : 0);
@@ -90,9 +98,16 @@ function finalizeDay(day) {
  * Build a continuous daily series (no gaps) for a set of channels.
  * `perChannel` also returns each channel's own series.
  */
-function buildSeries({ channelIds, start, end, includeEstimates = true }) {
+function buildSeries({ channelIds, start, end, includeEstimates = true, includeLiveViews = true }) {
   const rows = db.getDaily(channelIds, start, end);
   const estimates = includeEstimates ? db.getEstimates(channelIds, start, end) : [];
+  const liveRows = includeLiveViews ? db.getLiveDaily(channelIds, start, end) : [];
+
+  // Days Analytics has already reported, so live-derived views for those days
+  // can be ignored rather than double-counted.
+  const reportedViews = new Set(
+    rows.filter((r) => r.views_present === 1).map((r) => `${r.channel_id}:${r.date}`)
+  );
 
   const totals = new Map();
   const perChannel = new Map();
@@ -108,6 +123,24 @@ function buildSeries({ channelIds, start, end, includeEstimates = true }) {
     if (t) addRow(t, row);
     const c = perChannel.get(row.channel_id)?.get(row.date);
     if (c) addRow(c, row);
+  }
+
+  // Live-derived views for days Analytics has not published. These are what let
+  // the estimator model recent revenue at all, and they are flagged so the UI
+  // can show them as provisional.
+  for (const live of liveRows) {
+    if (reportedViews.has(`${live.channel_id}:${live.date}`)) continue;
+    const apply = (day) => {
+      if (!day) return;
+      day.views += live.views || 0;
+      day.lf_views += live.lf_views || 0;
+      day.sf_views += live.sf_views || 0;
+      day.hasViews = true;
+      day.viewsAreLive = true;
+      day.liveComplete = live.complete === 1;
+    };
+    apply(totals.get(live.date));
+    apply(perChannel.get(live.channel_id)?.get(live.date));
   }
 
   for (const est of estimates) {
@@ -141,13 +174,21 @@ function summarize(series) {
 
   out.isEstimated = estimatedDays > 0;
   finalizeDay(out);
+
+  // Averages must divide by days that actually have revenue data. Counting the
+  // trailing days YouTube has not reported yet would understate the average.
+  const daysWithRevenue = series.filter((d) => d.hasRevenueData);
+
   out.days = series.length;
+  out.daysWithData = daysWithRevenue.length;
+  out.daysAwaitingData = series.length - daysWithRevenue.length;
   out.estimatedDays = estimatedDays;
-  out.dailyAverage = series.length ? out.effectiveRevenue / series.length : 0;
-  out.bestDay = series.reduce(
+  out.dailyAverage = daysWithRevenue.length ? out.effectiveRevenue / daysWithRevenue.length : 0;
+  out.bestDay = daysWithRevenue.reduce(
     (best, d) => (!best || d.effectiveRevenue > best.effectiveRevenue ? d : best),
     null
   );
+  out.latestDayWithData = daysWithRevenue.length ? daysWithRevenue[daysWithRevenue.length - 1] : null;
   return out;
 }
 

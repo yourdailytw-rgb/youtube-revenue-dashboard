@@ -93,10 +93,15 @@ export function StatCards({ data, loading, compareLabel }) {
 export function QuickStats({ data }) {
   if (!data) return null;
   const { series, summary, estimation, forecast } = data;
-  const days = series.totals;
+
+  // Only days that actually have revenue data — the trailing days YouTube has
+  // not published are not zero-revenue days, and showing them as "0 kr" was
+  // both wrong and alarming.
+  const days = series.totals.filter((d) => d.hasRevenueData);
   const last = days[days.length - 1];
   const prev = days[days.length - 2];
   const best = summary.bestDay;
+  const awaiting = summary.daysAwaitingData || 0;
 
   const accuracy = estimation?.medianAbsPctError;
 
@@ -116,7 +121,7 @@ export function QuickStats({ data }) {
     {
       label: 'Daily average',
       value: formatMoney(summary.dailyAverage),
-      hint: `over ${summary.days} days`,
+      hint: `over ${summary.daysWithData ?? summary.days} days with data`,
     },
     {
       label: 'Best day',
@@ -128,12 +133,19 @@ export function QuickStats({ data }) {
       value: forecast ? formatMoney(forecast.projectedRevenue, { decimals: 0 }) : '—',
       hint: forecast ? `${forecast.daysRemaining} days left` : '—',
     },
-    {
-      label: 'Estimator accuracy',
-      value: accuracy !== null && accuracy !== undefined ? `±${(accuracy * 100).toFixed(1)}%` : '—',
-      hint: 'median back-test error',
-      tone: accuracy !== null && accuracy < 0.1 ? 'pos' : undefined,
-    },
+    awaiting > 0
+      ? {
+          label: 'Awaiting YouTube',
+          value: `${awaiting} day${awaiting === 1 ? '' : 's'}`,
+          hint: 'not reported yet — not zero',
+          tone: 'est',
+        }
+      : {
+          label: 'Estimator accuracy',
+          value: accuracy !== null && accuracy !== undefined ? `±${(accuracy * 100).toFixed(1)}%` : '—',
+          hint: 'median back-test error',
+          tone: accuracy !== null && accuracy < 0.1 ? 'pos' : undefined,
+        },
   ];
 
   return (

@@ -11,7 +11,7 @@ import {
   YAxis,
 } from 'recharts';
 import clsx from 'clsx';
-import { Zap, Info, ShieldCheck, ChevronDown } from 'lucide-react';
+import { Zap, Info, ShieldCheck, ChevronDown, Radio } from 'lucide-react';
 import { Card, CardHeader, Badge, Stat, EmptyState, Skeleton, ChannelAvatar } from './ui';
 import { api } from '../lib/api';
 import { formatMoney, formatDate, formatPct, formatNumber } from '../lib/format';
@@ -26,6 +26,7 @@ import { channelColor } from '../lib/metrics';
  */
 export function EstimatorView({ data }) {
   const [detail, setDetail] = useState(null);
+  const [live, setLive] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expanded, setExpanded] = useState(null);
@@ -33,9 +34,12 @@ export function EstimatorView({ data }) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    api
-      .estimates()
-      .then((res) => !cancelled && setDetail(res))
+    Promise.all([api.estimates(), api.liveStatus().catch(() => null)])
+      .then(([est, liveStatus]) => {
+        if (cancelled) return;
+        setDetail(est);
+        setLive(liveStatus);
+      })
       .catch((err) => !cancelled && setError(err.message))
       .finally(() => !cancelled && setLoading(false));
     return () => {
@@ -103,6 +107,8 @@ export function EstimatorView({ data }) {
           <Stat label="Channels modelled" value={String(channels.length)} hint="each fitted separately" />
         </div>
       </Card>
+
+      {live && <LiveFeedPanel live={live} />}
 
       {dates.length > 0 && (
         <Card className="overflow-hidden">
@@ -353,6 +359,103 @@ export function EstimatorView({ data }) {
         </ol>
       </Card>
     </div>
+  );
+}
+
+/**
+ * The live view-count feed. The Analytics API reports views and revenue with the
+ * same lag, so this is the only source of same-day data — and therefore the only
+ * reason a modelled day can exist at all. Its own accuracy is tracked against
+ * Analytics and shown here rather than assumed.
+ */
+function LiveFeedPanel({ live }) {
+  const channels = live.channels || [];
+  const totalSnapshots = channels.reduce((a, c) => a + (c.snapshots72h || 0), 0);
+  const totalLiveDays = channels.reduce((a, c) => a + (c.liveDays?.length || 0), 0);
+  const scored = channels.filter((c) => c.medianAbsError !== null && c.medianAbsError !== undefined);
+  const headline = scored.length
+    ? scored.reduce((a, c) => a + c.medianAbsError, 0) / scored.length
+    : null;
+
+  return (
+    <Card>
+      <CardHeader
+        title="Live view feed"
+        subtitle="YouTube's Analytics API lags views and revenue equally, so same-day views come from the Data API's cumulative counter instead — snapshotted every 20 minutes and differenced across Pacific-time day boundaries."
+        action={<Radio size={16} className={totalSnapshots > 0 ? 'text-pos' : 'text-ink-dim'} />}
+      />
+      <div className="grid grid-cols-2 gap-4 px-5 pb-4 sm:grid-cols-4">
+        <Stat
+          label="Snapshots (72h)"
+          value={String(totalSnapshots)}
+          hint={totalSnapshots === 0 ? 'polling not started yet' : 'across all channels'}
+          tone={totalSnapshots > 0 ? 'pos' : undefined}
+        />
+        <Stat
+          label="Days derived live"
+          value={String(totalLiveDays)}
+          hint="ahead of Analytics"
+          tone={totalLiveDays > 0 ? 'est' : undefined}
+        />
+        <Stat
+          label="Live feed accuracy"
+          value={headline !== null ? `±${(headline * 100).toFixed(1)}%` : 'not yet scored'}
+          hint="vs Analytics once it reports"
+          tone={headline !== null && headline < 0.1 ? 'pos' : undefined}
+        />
+        <Stat
+          label="Reporting day"
+          value={`${live.ptDate}`}
+          hint={`${live.ptHour}:00 Pacific — YouTube's day boundary`}
+        />
+      </div>
+
+      {totalSnapshots === 0 ? (
+        <p className="mx-5 mb-4 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn">
+          No snapshots captured yet. The feed needs a closing snapshot on two consecutive days before
+          it can derive anything, so the first modelled day appears roughly 24 hours after polling
+          starts.
+        </p>
+      ) : (
+        <div className="border-t border-line px-5 py-3">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-wide text-ink-dim">
+                <th className="pb-1.5 text-left font-medium">Channel</th>
+                <th className="pb-1.5 text-right font-medium">Snapshots</th>
+                <th className="pb-1.5 text-right font-medium">Live days</th>
+                <th className="pb-1.5 text-right font-medium">Views derived</th>
+                <th className="pb-1.5 text-right font-medium">Accuracy</th>
+              </tr>
+            </thead>
+            <tbody>
+              {channels.map((c) => (
+                <tr key={c.id} className="border-t border-line-soft">
+                  <td className="py-1.5 text-ink">{c.title}</td>
+                  <td className="py-1.5 text-right tabular text-ink-dim">{c.snapshots72h}</td>
+                  <td className="py-1.5 text-right tabular text-ink-dim">{c.liveDays?.length || 0}</td>
+                  <td className="py-1.5 text-right tabular text-ink-dim">
+                    {c.liveDays?.length
+                      ? c.liveDays.map((d) => formatNumber(d.views)).join(', ')
+                      : '—'}
+                  </td>
+                  <td className="py-1.5 text-right tabular">
+                    {c.medianAbsError !== null && c.medianAbsError !== undefined ? (
+                      <span className={c.medianAbsError < 0.1 ? 'text-pos' : 'text-warn'}>
+                        ±{(c.medianAbsError * 100).toFixed(1)}%{' '}
+                        <span className="text-ink-dim">({c.accuracySamples})</span>
+                      </span>
+                    ) : (
+                      <span className="text-ink-dim">not yet scored</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }
 

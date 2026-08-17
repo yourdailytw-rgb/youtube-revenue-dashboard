@@ -11,6 +11,7 @@ const tokens = require('./tokens');
 const oauth = require('./oauth');
 const youtube = require('./youtube');
 const analytics = require('./analytics');
+const livecounts = require('./livecounts');
 const sync = require('./sync');
 const { estimateChannel } = require('./estimator');
 const { today, addDays, isValidISO, diffDays } = require('./util/dates');
@@ -261,8 +262,10 @@ api.get('/estimates', (req, res) => {
   const out = {};
   for (const id of ids) {
     if (!connected[id]) continue;
-    const history = db.getChannelDaily(id, addDays(today(), -220), today());
-    if (!history.length) continue;
+    const reported = db.getChannelDaily(id, addDays(today(), -220), today());
+    if (!reported.length) continue;
+    // Same merge the sync uses, so this view matches what the dashboard shows.
+    const history = livecounts.mergeLiveIntoHistory(id, reported);
     const result = estimateChannel(history);
     out[id] = {
       channelTitle: connected[id].channelTitle,
@@ -403,6 +406,19 @@ const csvEscape = (v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g,
 // --- Sync + diagnostics ----------------------------------------------------
 
 api.get('/sync/status', (req, res) => res.json(sync.syncStatus()));
+
+/** Live view-count feed: snapshots taken, days derived, and how well they held up. */
+api.get('/live-status', (req, res) => res.json(livecounts.liveStatus()));
+
+api.post('/live-poll', async (req, res) => {
+  try {
+    const result = await livecounts.refreshLiveCounts();
+    sync.recomputeAllEstimates();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 api.post('/sync', async (req, res) => {
   const full = req.query.full === 'true' || req.body?.full === true;

@@ -11,6 +11,11 @@ const ROOT = path.join(__dirname, '..');
  * we fall back to a local ./data directory so local dev behaves the same.
  */
 function resolveDataDir() {
+  // Used by the test scripts so they never touch the real database.
+  if (process.env.DATA_DIR_OVERRIDE) {
+    fs.mkdirSync(process.env.DATA_DIR_OVERRIDE, { recursive: true });
+    return process.env.DATA_DIR_OVERRIDE;
+  }
   try {
     if (fs.existsSync('/data') && fs.statSync('/data').isDirectory()) {
       console.log('[config] Railway Volume detected at /data — using persistent storage');
@@ -61,6 +66,10 @@ const config = {
   BACKFILL_START: process.env.BACKFILL_START || '2024-01-01',
   SYNC_REFRESH_DAYS: Number(process.env.SYNC_REFRESH_DAYS) || 14,
   SYNC_INTERVAL_MINUTES: Number(process.env.SYNC_INTERVAL_MINUTES) || 180,
+  // How often to snapshot the live cumulative view counter. Needs to be well
+  // under an hour so the last snapshot before midnight Pacific lands close to
+  // the actual day boundary.
+  LIVE_POLL_MINUTES: Number(process.env.LIVE_POLL_MINUTES) || 20,
 
   // Token refresh cadence, unchanged from v1.
   TOKEN_REFRESH_HOURS: 6,
