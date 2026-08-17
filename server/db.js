@@ -113,6 +113,21 @@ CREATE TABLE IF NOT EXISTS video_stats_cache (
   fetched_at  TEXT NOT NULL
 );
 
+-- Per-video cumulative counters, snapshotted on the same schedule as the
+-- channel counters. Differencing these is what gives a genuine views-per-hour
+-- velocity — "what is taking off right now" — which no Analytics report can
+-- provide, since those lag by days.
+CREATE TABLE IF NOT EXISTS video_snapshots (
+  video_id     TEXT NOT NULL,
+  captured_at  TEXT NOT NULL,
+  view_count   INTEGER,
+  like_count   INTEGER,
+  comment_count INTEGER,
+  PRIMARY KEY (video_id, captured_at)
+);
+
+CREATE INDEX IF NOT EXISTS idx_video_snapshots ON video_snapshots(video_id, captured_at);
+
 CREATE TABLE IF NOT EXISTS sync_state (
   key    TEXT PRIMARY KEY,
   value  TEXT
@@ -392,6 +407,80 @@ function getVideos(videoIds) {
   return db.prepare(`SELECT * FROM videos WHERE video_id IN (${marks})`).all(...videoIds);
 }
 
+function insertVideoSnapshot({ videoId, capturedAt, viewCount, likeCount, commentCount }) {
+  db.prepare(
+    `INSERT INTO video_snapshots (video_id, captured_at, view_count, like_count, comment_count)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(video_id, captured_at) DO NOTHING`
+  ).run(videoId, capturedAt, viewCount ?? null, likeCount ?? null, commentCount ?? null);
+}
+
+/**
+ * Views per hour over the most recent snapshot window, per video.
+ * Returns a map of videoId -> { viewsPerHour, windowHours, gained, latestViews }.
+ */
+function videoVelocity(videoIds, windowHours = 24) {
+  if (!videoIds.length) return new Map();
+  const since = new Date(Date.now() - windowHours * 3600 * 1000).toISOString();
+  const marks = videoIds.map(() => '?').join(',');
+
+  const rows = db
+    .prepare(
+      `SELECT video_id, captured_at, view_count FROM video_snapshots
+       WHERE video_id IN (${marks}) AND captured_at >= ?
+       ORDER BY video_id, captured_at`
+    )
+    .all(...videoIds, since);
+
+  const byVideo = new Map();
+  for (const row of rows) {
+    if (!byVideo.has(row.video_id)) byVideo.set(row.video_id, []);
+    byVideo.get(row.video_id).push(row);
+  }
+
+  const out = new Map();
+  for (const [videoId, snaps] of byVideo) {
+    if (snaps.length < 2) continue;
+    const first = snaps[0];
+    const last = snaps[snaps.length - 1];
+    const hours = (new Date(last.captured_at) - new Date(first.captured_at)) / 3600000;
+    if (hours <= 0) continue;
+    const gained = (last.view_count ?? 0) - (first.view_count ?? 0);
+    if (gained < 0) continue;
+    out.set(videoId, {
+      viewsPerHour: gained / hours,
+      windowHours: hours,
+      gained,
+      latestViews: last.view_count,
+      samples: snaps.length,
+    });
+  }
+  return out;
+}
+
+function pruneVideoSnapshots(beforeISO) {
+  db.prepare('DELETE FROM video_snapshots WHERE captured_at < ?').run(beforeISO);
+}
+
+function getTrackedVideoIds(limitPerChannel = 60) {
+  // Most recently published videos per channel — where velocity actually matters.
+  return db
+    .prepare(
+      `SELECT video_id, channel_id FROM videos
+       WHERE published_at IS NOT NULL
+       ORDER BY published_at DESC`
+    )
+    .all()
+    .reduce((acc, row) => {
+      const count = acc.counts.get(row.channel_id) || 0;
+      if (count < limitPerChannel) {
+        acc.ids.push(row.video_id);
+        acc.counts.set(row.channel_id, count + 1);
+      }
+      return acc;
+    }, { ids: [], counts: new Map() }).ids;
+}
+
 function getCache(key, maxAgeMs) {
   const row = db.prepare('SELECT * FROM video_stats_cache WHERE cache_key = ?').get(key);
   if (!row) return null;
@@ -561,6 +650,10 @@ module.exports = {
   getLiveAccuracy,
   upsertVideo,
   getVideos,
+  insertVideoSnapshot,
+  videoVelocity,
+  pruneVideoSnapshots,
+  getTrackedVideoIds,
   getCache,
   setCache,
   clearCache,

@@ -275,68 +275,161 @@ api.get('/estimates', (req, res) => {
   res.json(out);
 });
 
+/**
+ * Video ranking.
+ *
+ * Candidates are gathered from several Analytics sort orders (revenue, views,
+ * watch time) and merged, because each query is capped at maxResults for ITS
+ * sort — ranking by views off a revenue-sorted list would silently omit the
+ * most-watched videos. Lifetime counters come from the Data API (near-live),
+ * and views-per-hour comes from our own per-video snapshots, which is the only
+ * way to see what is moving right now.
+ */
 api.get('/videos', async (req, res) => {
   const range = parseRange(req);
   if (range.error) return res.status(400).json({ error: range.error });
   const { start, end, channelIds } = range;
-  const limit = Math.min(50, Math.max(5, Number(req.query.limit) || 25));
+  const limit = Math.min(100, Math.max(5, Number(req.query.limit) || 40));
+  const velocityHours = Math.min(168, Math.max(1, Number(req.query.velocityHours) || 24));
 
-  const cacheKey = `videos:${channelIds.join('|')}:${start}:${end}:${limit}`;
-  const cached = db.getCache(cacheKey, 60 * 60 * 1000);
-  if (cached) return res.json({ ...cached, cached: true });
+  const cacheKey = `videos:v2:${channelIds.join('|')}:${start}:${end}:${limit}`;
+  const cached = db.getCache(cacheKey, 30 * 60 * 1000);
 
-  const allTokens = tokens.loadTokens();
-  const collected = [];
-  const errors = [];
+  let payload = cached;
+  if (!payload) {
+    const allTokens = tokens.loadTokens();
+    const collected = [];
+    const errors = [];
 
-  for (const channelId of channelIds) {
-    const tokenData = allTokens[channelId];
-    if (!tokenData) continue;
-    try {
-      const client = oauth.clientForChannel(channelId, tokenData);
-      const videos = await youtube.fetchTopVideos({ auth: client, channelId, start, end, limit });
-      const ids = videos.map((v) => v.videoId);
+    for (const channelId of channelIds) {
+      const tokenData = allTokens[channelId];
+      if (!tokenData || tokenData.mock) continue;
+      try {
+        const client = oauth.clientForChannel(channelId, tokenData);
+        const pool = await youtube.fetchVideoRankingPool({
+          auth: client,
+          channelId,
+          start,
+          end,
+          limit,
+        });
+        errors.push(...pool.errors.map((e) => ({ channelId, ...e })));
 
-      const known = new Map(db.getVideos(ids).map((v) => [v.video_id, v]));
-      const missing = ids.filter((id) => !known.has(id));
-      if (missing.length) {
-        const details = await youtube.fetchVideoDetails({ auth: client, videoIds: missing });
+        const ids = pool.videos.map((v) => v.videoId);
+        if (!ids.length) continue;
+
+        // Always refresh lifetime counters — they are the "all time" ranking.
+        const details = await youtube.fetchVideoDetails({ auth: client, videoIds: ids });
+        const meta = new Map();
         for (const detail of details) {
           db.upsertVideo(detail);
-          known.set(detail.videoId, {
-            video_id: detail.videoId,
-            title: detail.title,
-            thumbnail: detail.thumbnail,
-            published_at: detail.publishedAt,
-            duration_sec: detail.durationSec,
-            is_short: detail.isShort ? 1 : 0,
+          meta.set(detail.videoId, detail);
+        }
+
+        for (const video of pool.videos) {
+          const m = meta.get(video.videoId) || {};
+          collected.push({
+            ...video,
+            channelId,
+            channelTitle: tokenData.channelTitle,
+            title: m.title || video.videoId,
+            thumbnail: m.thumbnail || null,
+            publishedAt: m.publishedAt || null,
+            durationSec: m.durationSec ?? null,
+            isShort: Boolean(m.isShort),
+            lifetimeViews: m.lifetimeViews ?? null,
+            lifetimeLikes: m.lifetimeLikes ?? null,
+            lifetimeComments: m.lifetimeComments ?? null,
           });
         }
+      } catch (err) {
+        errors.push({ channelId, message: err.message });
       }
-
-      for (const video of videos) {
-        const meta = known.get(video.videoId);
-        collected.push({
-          ...video,
-          channelId,
-          channelTitle: tokenData.channelTitle,
-          title: meta?.title || video.videoId,
-          thumbnail: meta?.thumbnail || null,
-          publishedAt: meta?.published_at || null,
-          durationSec: meta?.duration_sec ?? null,
-          isShort: Boolean(meta?.is_short),
-          rpm: video.views > 0 && video.revenue != null ? (video.revenue / video.views) * 1000 : null,
-        });
-      }
-    } catch (err) {
-      errors.push({ channelId, message: err.message });
     }
+
+    payload = { range: { start, end }, videos: collected, errors };
+    db.setCache(cacheKey, payload);
   }
 
-  collected.sort((a, b) => (b.revenue ?? 0) - (a.revenue ?? 0) || b.views - a.views);
-  const payload = { range: { start, end }, videos: collected.slice(0, limit * 2), errors };
-  db.setCache(cacheKey, payload);
-  res.json(payload);
+  // Velocity is deliberately computed outside the cache — it changes every poll.
+  const velocity = db.videoVelocity(
+    payload.videos.map((v) => v.videoId),
+    velocityHours
+  );
+
+  const now = Date.now();
+  const enriched = payload.videos.map((video) => {
+    const vel = velocity.get(video.videoId);
+    const ageHours = video.publishedAt
+      ? Math.max(1, (now - new Date(video.publishedAt).getTime()) / 3600000)
+      : null;
+    const lifetime = video.lifetimeViews;
+    const engagement =
+      lifetime > 0 && video.lifetimeLikes != null
+        ? (video.lifetimeLikes + (video.lifetimeComments || 0)) / lifetime
+        : null;
+
+    return {
+      ...video,
+      rpm: video.views > 0 && video.revenue != null ? (video.revenue / video.views) * 1000 : null,
+      watchHours: (video.watchMinutes || 0) / 60,
+      ageHours,
+      ageDays: ageHours ? ageHours / 24 : null,
+      // Average pace across the video's whole life.
+      lifetimeViewsPerHour: lifetime != null && ageHours ? lifetime / ageHours : null,
+      // Actual recent pace, measured from our own snapshots.
+      viewsPerHour: vel?.viewsPerHour ?? null,
+      velocityWindowHours: vel?.windowHours ?? null,
+      velocityGained: vel?.gained ?? null,
+      velocitySamples: vel?.samples ?? 0,
+      revenuePerDay:
+        video.revenue != null && diffDays(start, end) >= 0
+          ? video.revenue / (diffDays(start, end) + 1)
+          : null,
+      engagementRate: engagement,
+      subsPerThousandViews:
+        video.views > 0 && video.subscribersGained != null
+          ? (video.subscribersGained / video.views) * 1000
+          : null,
+    };
+  });
+
+  const SORTS = {
+    revenue: (a, b) => (b.revenue ?? -1) - (a.revenue ?? -1),
+    views: (a, b) => b.views - a.views,
+    lifetimeViews: (a, b) => (b.lifetimeViews ?? -1) - (a.lifetimeViews ?? -1),
+    viewsPerHour: (a, b) => (b.viewsPerHour ?? -1) - (a.viewsPerHour ?? -1),
+    lifetimeViewsPerHour: (a, b) => (b.lifetimeViewsPerHour ?? -1) - (a.lifetimeViewsPerHour ?? -1),
+    rpm: (a, b) => (b.rpm ?? -1) - (a.rpm ?? -1),
+    watchHours: (a, b) => b.watchHours - a.watchHours,
+    avgViewDuration: (a, b) => (b.avgViewDuration ?? 0) - (a.avgViewDuration ?? 0),
+    avgViewPercentage: (a, b) => (b.avgViewPercentage ?? -1) - (a.avgViewPercentage ?? -1),
+    subscribersGained: (a, b) => (b.subscribersGained ?? -1) - (a.subscribersGained ?? -1),
+    engagementRate: (a, b) => (b.engagementRate ?? -1) - (a.engagementRate ?? -1),
+    newest: (a, b) => String(b.publishedAt || '').localeCompare(String(a.publishedAt || '')),
+  };
+
+  const sortKey = SORTS[req.query.sort] ? req.query.sort : 'revenue';
+  enriched.sort(SORTS[sortKey]);
+
+  const velocityCoverage = enriched.filter((v) => v.viewsPerHour != null).length;
+
+  res.json({
+    range: payload.range,
+    sort: sortKey,
+    availableSorts: Object.keys(SORTS),
+    velocityHours,
+    velocityCoverage,
+    velocityReady: velocityCoverage > 0,
+    totals: {
+      videos: enriched.length,
+      revenue: enriched.reduce((a, v) => a + (v.revenue || 0), 0),
+      views: enriched.reduce((a, v) => a + (v.views || 0), 0),
+    },
+    videos: enriched.slice(0, limit),
+    errors: payload.errors,
+    cached: Boolean(cached),
+  });
 });
 
 api.get('/export', (req, res) => {

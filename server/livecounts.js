@@ -209,6 +209,123 @@ function reconcileChannel(channelId) {
   return results;
 }
 
+/**
+ * Refresh the list of recent uploads we track per channel.
+ *
+ * Runs less often than the statistics poll — the upload list changes slowly,
+ * the counters change constantly.
+ */
+async function refreshTrackedVideos({ perChannel = 50 } = {}) {
+  const allTokens = loadTokens();
+  let discovered = 0;
+
+  for (const [channelId, tokenData] of Object.entries(allTokens)) {
+    if (tokenData.mock) continue;
+    try {
+      const auth = clientForChannel(channelId, tokenData);
+      const youtube = google.youtube({ version: 'v3', auth });
+
+      const channelRes = await youtube.channels.list({ part: 'contentDetails', id: channelId });
+      const uploadsPlaylist =
+        channelRes.data.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+      if (!uploadsPlaylist) continue;
+
+      const playlist = await youtube.playlistItems.list({
+        part: 'contentDetails',
+        playlistId: uploadsPlaylist,
+        maxResults: Math.min(50, perChannel),
+      });
+      const videoIds = (playlist.data.items || [])
+        .map((item) => item.contentDetails?.videoId)
+        .filter(Boolean);
+      if (!videoIds.length) continue;
+
+      const details = await youtube.videos.list({
+        part: 'snippet,contentDetails,statistics',
+        id: videoIds.join(','),
+        maxResults: 50,
+      });
+
+      for (const item of details.data.items || []) {
+        const durationSec = parseISODurationSeconds(item.contentDetails?.duration);
+        db.upsertVideo({
+          videoId: item.id,
+          channelId,
+          title: item.snippet?.title,
+          thumbnail:
+            item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url || null,
+          publishedAt: item.snippet?.publishedAt,
+          durationSec,
+          isShort: durationSec !== null && durationSec <= 180,
+        });
+        discovered++;
+      }
+    } catch (err) {
+      console.warn(`[live] ${tokenData.channelTitle}: upload list refresh failed — ${err.message}`);
+    }
+  }
+
+  if (discovered) console.log(`[live] Tracking ${discovered} recent video(s)`);
+  return { discovered };
+}
+
+/**
+ * Snapshot per-video cumulative counters. Differencing these across polls is
+ * what produces a real views-per-hour figure — Analytics cannot, it lags days.
+ */
+async function pollVideoStats() {
+  const allTokens = loadTokens();
+  const firstLive = Object.entries(allTokens).find(([, t]) => !t.mock);
+  if (!firstLive) return { snapshotted: 0 };
+
+  const videoIds = db.getTrackedVideoIds(60);
+  if (!videoIds.length) return { snapshotted: 0 };
+
+  const capturedAt = new Date().toISOString();
+  const auth = clientForChannel(firstLive[0], firstLive[1]);
+  const youtube = google.youtube({ version: 'v3', auth });
+  let snapshotted = 0;
+
+  for (let i = 0; i < videoIds.length; i += 50) {
+    const batch = videoIds.slice(i, i + 50);
+    try {
+      const res = await youtube.videos.list({
+        part: 'statistics',
+        id: batch.join(','),
+        maxResults: 50,
+      });
+      for (const item of res.data.items || []) {
+        db.insertVideoSnapshot({
+          videoId: item.id,
+          capturedAt,
+          viewCount: item.statistics?.viewCount != null ? Number(item.statistics.viewCount) : null,
+          likeCount: item.statistics?.likeCount != null ? Number(item.statistics.likeCount) : null,
+          commentCount:
+            item.statistics?.commentCount != null ? Number(item.statistics.commentCount) : null,
+        });
+        snapshotted++;
+      }
+    } catch (err) {
+      console.warn(`[live] Video stats batch failed — ${err.message}`);
+    }
+  }
+
+  // A week of per-video snapshots is plenty for velocity windows.
+  db.pruneVideoSnapshots(new Date(Date.now() - 7 * 86400000).toISOString());
+
+  return { snapshotted };
+}
+
+function parseISODurationSeconds(iso) {
+  if (!iso) return null;
+  const m = /^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(iso);
+  if (!m) return null;
+  const [, d, h, min, s] = m.map((v) => (v ? Number(v) : 0));
+  return d * 86400 + h * 3600 + min * 60 + s;
+}
+
+let pollCount = 0;
+
 /** Poll, derive and reconcile for every connected channel. */
 async function refreshLiveCounts() {
   const poll = await pollAll();
@@ -222,7 +339,18 @@ async function refreshLiveCounts() {
       console.error(`[live] ${channel.title}: ${err.message}`);
     }
   }
-  return { poll, perChannel };
+
+  // Upload lists change slowly; refresh them every 6th poll (~2 hours).
+  let videos = { snapshotted: 0 };
+  try {
+    if (pollCount % 6 === 0) await refreshTrackedVideos();
+    videos = await pollVideoStats();
+  } catch (err) {
+    console.error('[live] Video polling failed:', err.message);
+  }
+  pollCount++;
+
+  return { poll, perChannel, videos };
 }
 
 /**
@@ -295,6 +423,8 @@ module.exports = {
   ptDateOf,
   ptHourOf,
   pollAll,
+  refreshTrackedVideos,
+  pollVideoStats,
   deriveForChannel,
   reconcileChannel,
   refreshLiveCounts,

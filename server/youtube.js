@@ -42,7 +42,18 @@ const CORE_METRICS = [
 
 const SPLIT_METRICS = ['views', 'estimatedMinutesWatched'];
 
-const VIDEO_METRICS = ['views', 'estimatedRevenue', 'estimatedMinutesWatched', 'averageViewDuration'];
+const VIDEO_METRICS = [
+  'views',
+  'estimatedRevenue',
+  'estimatedMinutesWatched',
+  'averageViewDuration',
+  'averageViewPercentage',
+  'subscribersGained',
+  'likes',
+  'comments',
+  'shares',
+  'cpm',
+];
 
 function analyticsFor(auth) {
   return google.youtubeAnalytics({ version: 'v2', auth });
@@ -198,13 +209,13 @@ async function fetchDailyMetrics({ auth, channelId, start, end, currency = confi
 }
 
 /** Top videos for a range, sorted by revenue (falls back to views). */
-async function fetchTopVideos({ auth, channelId, start, end, limit = 25, currency = config.CURRENCY }) {
+async function fetchTopVideos({ auth, channelId, start, end, limit = 25, currency = config.CURRENCY, sort = '-estimatedRevenue' }) {
   const params = {
     ids: `channel==${channelId}`,
     startDate: start,
     endDate: end,
     dimensions: 'video',
-    sort: '-estimatedRevenue',
+    sort,
     maxResults: limit,
     currency,
   };
@@ -217,6 +228,12 @@ async function fetchTopVideos({ auth, channelId, start, end, limit = 25, currenc
       revenue: num(r.estimatedRevenue) ?? 0,
       watchMinutes: num(r.estimatedMinutesWatched) ?? 0,
       avgViewDuration: num(r.averageViewDuration) ?? 0,
+      avgViewPercentage: num(r.averageViewPercentage),
+      subscribersGained: num(r.subscribersGained),
+      likes: num(r.likes),
+      comments: num(r.comments),
+      shares: num(r.shares),
+      cpm: num(r.cpm),
     }));
   } catch (err) {
     // Non-monetised channels cannot sort by revenue — fall back to views.
@@ -241,7 +258,34 @@ async function fetchTopVideos({ auth, channelId, start, end, limit = 25, currenc
   }
 }
 
-/** Titles/thumbnails/durations for a batch of video IDs (Data API v3). */
+/**
+ * Candidate videos for a ranking, gathered from several sort orders.
+ *
+ * The Analytics API caps rows at maxResults *for the requested sort*, so asking
+ * only for the top earners would make a views ranking wrong — the most-watched
+ * video might not be in the top 25 by revenue. Querying each sort order and
+ * merging gives an honest pool to rank from.
+ */
+async function fetchVideoRankingPool({ auth, channelId, start, end, limit = 30, currency = config.CURRENCY }) {
+  const sorts = ['-estimatedRevenue', '-views', '-estimatedMinutesWatched'];
+  const merged = new Map();
+  const errors = [];
+
+  for (const sort of sorts) {
+    try {
+      const rows = await fetchTopVideos({ auth, channelId, start, end, limit, currency, sort });
+      for (const row of rows) {
+        if (!merged.has(row.videoId)) merged.set(row.videoId, row);
+      }
+    } catch (err) {
+      errors.push({ sort, message: err.message });
+    }
+  }
+
+  return { videos: [...merged.values()], errors };
+}
+
+/** Titles/thumbnails/durations/lifetime stats for a batch of video IDs. */
 async function fetchVideoDetails({ auth, videoIds }) {
   if (!videoIds.length) return [];
   const youtube = google.youtube({ version: 'v3', auth });
@@ -249,12 +293,13 @@ async function fetchVideoDetails({ auth, videoIds }) {
   for (let i = 0; i < videoIds.length; i += 50) {
     const batch = videoIds.slice(i, i + 50);
     const res = await youtube.videos.list({
-      part: 'snippet,contentDetails',
+      part: 'snippet,contentDetails,statistics',
       id: batch.join(','),
       maxResults: 50,
     });
     for (const item of res.data.items || []) {
       const durationSec = parseISODuration(item.contentDetails?.duration);
+      const stats = item.statistics || {};
       out.push({
         videoId: item.id,
         channelId: item.snippet?.channelId,
@@ -264,6 +309,10 @@ async function fetchVideoDetails({ auth, videoIds }) {
         publishedAt: item.snippet?.publishedAt,
         durationSec,
         isShort: durationSec !== null && durationSec <= 180,
+        // Lifetime counters, near-live (unlike Analytics, which lags days).
+        lifetimeViews: stats.viewCount != null ? Number(stats.viewCount) : null,
+        lifetimeLikes: stats.likeCount != null ? Number(stats.likeCount) : null,
+        lifetimeComments: stats.commentCount != null ? Number(stats.commentCount) : null,
       });
     }
   }
@@ -297,6 +346,7 @@ module.exports = {
   chunkRange,
   fetchDailyMetrics,
   fetchTopVideos,
+  fetchVideoRankingPool,
   fetchVideoDetails,
   fetchMyChannel,
   diffDays,

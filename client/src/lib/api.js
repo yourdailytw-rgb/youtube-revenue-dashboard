@@ -43,8 +43,10 @@ export const api = {
   analytics: ({ start, end, channels, compare }) =>
     request(`/api/analytics${qs({ start, end, channels: channels?.join(','), compare })}`),
 
-  videos: ({ start, end, channels, limit }) =>
-    request(`/api/videos${qs({ start, end, channels: channels?.join(','), limit })}`),
+  videos: ({ start, end, channels, limit, sort, velocityHours }) =>
+    request(
+      `/api/videos${qs({ start, end, channels: channels?.join(','), limit, sort, velocityHours })}`
+    ),
 
   estimates: (channel) => request(`/api/estimates${qs({ channel })}`),
 

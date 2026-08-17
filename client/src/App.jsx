@@ -349,7 +349,11 @@ export default function App() {
             {state.tab === 'trends' && (loading && !data ? <Skeleton className="h-96" /> : <TrendsView data={data} />)}
 
             {state.tab === 'videos' && (
-              <VideosView range={{ start: state.start, end: state.end }} channels={state.channels} />
+              <VideosView
+                range={{ start: state.start, end: state.end }}
+                channels={state.channels}
+                allChannels={channels}
+              />
             )}
 
             {state.tab === 'daily' &&
