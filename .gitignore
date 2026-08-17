@@ -6,3 +6,9 @@ data/
 client/dist/
 *.log
 .DS_Store
+
+# Never commit credentials
+*.bak
+tokens*.json
+.env*
+!.env.example

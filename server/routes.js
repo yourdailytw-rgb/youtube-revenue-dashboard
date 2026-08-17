@@ -54,7 +54,10 @@ router.get('/auth', (req, res) => {
   if (!config.CLIENT_ID || !config.CLIENT_SECRET) {
     return res.status(500).send('CLIENT_ID / CLIENT_SECRET are not configured on the server.');
   }
-  res.redirect(oauth.generateAuthUrl());
+  // Derived from this request, so connecting through a tunnel or a custom
+  // domain sends the user back to the host they are actually using.
+  console.log(`[oauth] Starting flow with redirect_uri: ${oauth.getRedirectUri(req)}`);
+  res.redirect(oauth.generateAuthUrl(req));
 });
 
 router.get('/oauth2callback', async (req, res) => {
@@ -62,7 +65,9 @@ router.get('/oauth2callback', async (req, res) => {
   if (!code) return res.status(400).send('Missing authorization code');
 
   try {
-    const client = oauth.makeOAuth2Client();
+    // Must be built from the same request host as /auth used, otherwise Google
+    // rejects the exchange with redirect_uri_mismatch.
+    const client = oauth.makeOAuth2Client(req);
     const { tokens: newTokens } = await client.getToken(code);
     client.setCredentials(newTokens);
 

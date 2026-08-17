@@ -13,21 +13,57 @@ const { google } = require('googleapis');
 const config = require('./config');
 const { loadTokens, saveTokens, channelHealth } = require('./tokens');
 
-function getRedirectUri() {
+/**
+ * Where Google sends the user back after consent.
+ *
+ * Resolution order matters. The whole flow breaks if the callback URL does not
+ * point at the host the user is actually browsing — send someone on another
+ * machine to http://localhost:3000/oauth2callback and their browser refuses the
+ * connection, because that is *their* localhost, not the server's.
+ *
+ *   1. REDIRECT_URI            explicit override, always wins
+ *   2. RAILWAY_PUBLIC_DOMAIN   set by Railway in production
+ *   3. the request's own host  covers tunnels, proxies and any other domain
+ *   4. localhost               local development fallback
+ *
+ * Whichever is used must also be registered in the Google Cloud Console under
+ * the OAuth client's Authorised redirect URIs, or Google returns
+ * redirect_uri_mismatch.
+ */
+function getRedirectUri(req) {
+  if (process.env.REDIRECT_URI) return process.env.REDIRECT_URI;
+
   if (config.RAILWAY_PUBLIC_DOMAIN) {
     return `https://${config.RAILWAY_PUBLIC_DOMAIN}/oauth2callback`;
   }
-  return process.env.REDIRECT_URI || `http://localhost:${config.PORT}/oauth2callback`;
+
+  if (req) {
+    // Behind a tunnel or proxy these headers carry the URL the user typed.
+    const forwardedHost = req.headers['x-forwarded-host'];
+    const host = forwardedHost || req.headers.host;
+    if (host && !host.startsWith('localhost') && !host.startsWith('127.0.0.1')) {
+      const proto = req.headers['x-forwarded-proto'] || (req.secure ? 'https' : 'http');
+      return `${proto}://${host}/oauth2callback`;
+    }
+    if (host) return `http://${host}/oauth2callback`;
+  }
+
+  return `http://localhost:${config.PORT}/oauth2callback`;
 }
 
-function makeOAuth2Client() {
-  return new google.auth.OAuth2(config.CLIENT_ID, config.CLIENT_SECRET, getRedirectUri());
+function makeOAuth2Client(req) {
+  return new google.auth.OAuth2(config.CLIENT_ID, config.CLIENT_SECRET, getRedirectUri(req));
 }
 
-function generateAuthUrl() {
-  return makeOAuth2Client().generateAuthUrl({
+function generateAuthUrl(req) {
+  return makeOAuth2Client(req).generateAuthUrl({
     access_type: 'offline',
-    prompt: 'consent',
+    // 'consent' guarantees a fresh refresh_token every time.
+    // 'select_account' forces the account chooser — without it Google silently
+    // reuses whichever account the browser is already signed into, which is
+    // wrong here: each channel lives on a different account, so connecting five
+    // channels means picking a different account five times.
+    prompt: 'consent select_account',
     scope: config.SCOPES,
   });
 }
