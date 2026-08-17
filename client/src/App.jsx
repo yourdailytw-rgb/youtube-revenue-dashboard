@@ -29,7 +29,7 @@ import { SettingsView } from './components/SettingsView';
 import { Tabs, Card, Button, EmptyState, Skeleton } from './components/ui';
 import { api } from './lib/api';
 import { setCurrency, formatDate } from './lib/format';
-import { todayISO, addDays, startOfMonth, endOfMonth } from './lib/ranges';
+import { todayISO, startOfMonth, endOfMonth } from './lib/ranges';
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: <LayoutDashboard size={13} /> },
@@ -49,13 +49,15 @@ const COMPARE_OPTIONS = [
   { id: 'none', label: 'No comparison' },
 ];
 
-/** URL state so a view can be shared or reloaded without losing context. */
+/** Tab/metric/channel state persists in the URL; the date range does not. */
 function readUrlState() {
   const params = new URLSearchParams(window.location.search);
   const today = todayISO();
   return {
     tab: params.get('tab') || 'overview',
-    start: params.get('start') || addDays(today, -29),
+    // Default period is the current month — that is what you want to see on
+    // opening the dashboard. An explicit range in the URL still wins.
+    start: params.get('start') || startOfMonth(today),
     end: params.get('end') || today,
     channels: params.get('channels') ? params.get('channels').split(',').filter(Boolean) : [],
     compare: params.get('compare') || 'previous',
@@ -63,11 +65,15 @@ function readUrlState() {
   };
 }
 
+/**
+ * The date range is deliberately NOT written back to the URL: opening or
+ * reloading the dashboard should always land on the current month, not on
+ * whatever range happened to be open last time. A range passed in explicitly is
+ * still honoured on load, so shared links keep working.
+ */
 function writeUrlState(state) {
   const params = new URLSearchParams();
   params.set('tab', state.tab);
-  params.set('start', state.start);
-  params.set('end', state.end);
   params.set('compare', state.compare);
   params.set('metric', state.metric);
   if (state.channels.length) params.set('channels', state.channels.join(','));
