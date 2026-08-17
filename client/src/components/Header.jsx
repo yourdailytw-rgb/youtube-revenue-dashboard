@@ -8,7 +8,7 @@ export function Header({ user, sync, estimation, onSync, syncing, tokenIssues })
 
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
+      <div className="mx-auto flex max-w-[1600px] items-center gap-2 px-3 py-2.5 sm:gap-3 sm:px-6 sm:py-3">
         <div className="flex min-w-0 items-center gap-2.5">
           <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-neg/90">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="white" aria-hidden="true">
@@ -28,7 +28,7 @@ export function Header({ user, sync, estimation, onSync, syncing, tokenIssues })
           </div>
         </div>
 
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
           {delay > 0 && (
             <Badge
               tone="est"

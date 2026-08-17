@@ -110,7 +110,7 @@ export function DateRangePicker({ start, end, onChange, earliest }) {
       </Button>
 
       {open && (
-        <div className="fade-up absolute right-0 top-full z-50 mt-2 w-[min(94vw,720px)] overflow-hidden rounded-xl border border-line bg-surface shadow-2xl shadow-black/50">
+        <div className="fade-up fixed left-2 right-2 top-[104px] z-50 max-h-[80vh] overflow-y-auto rounded-xl border border-line bg-surface shadow-2xl shadow-black/50 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:max-h-none sm:w-[min(94vw,720px)] sm:overflow-hidden">
           <div className="flex flex-col sm:flex-row">
             {/* Presets */}
             <div className="w-full shrink-0 border-b border-line p-2 sm:w-44 sm:border-b-0 sm:border-r">

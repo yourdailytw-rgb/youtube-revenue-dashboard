@@ -14,7 +14,7 @@ import { formatMoney, formatDate } from '../lib/format';
 export function StatCards({ data, loading, compareLabel }) {
   if (loading || !data) {
     return (
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
         {[0, 1, 2, 3].map((i) => (
           <Card key={i} className="h-[104px] skeleton border-line" />
         ))}
@@ -25,7 +25,7 @@ export function StatCards({ data, loading, compareLabel }) {
   const { summary, comparison } = data;
 
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
       {HEADLINE_METRICS.map((id) => {
         const metric = METRICS[id];
         const value = summary[metric.summaryKey];
@@ -33,7 +33,7 @@ export function StatCards({ data, loading, compareLabel }) {
         const spark = data.series.totals.map((d) => ({ v: d[metric.dayKey] || 0 }));
 
         return (
-          <Card key={id} className="relative overflow-hidden p-4">
+          <Card key={id} className="relative overflow-hidden p-3 sm:p-4">
             <div className="flex items-start justify-between gap-2">
               <p className="text-[11px] font-medium uppercase tracking-wide text-ink-dim">
                 {metric.label}
@@ -129,7 +129,7 @@ export function QuickStats({ data }) {
     {
       label: 'Daily average',
       value: formatMoney(summary.dailyAverage),
-      hint: `over ${summary.daysWithData ?? summary.days} days with data`,
+      hint: `over ${summary.daysComplete ?? summary.daysWithData ?? summary.days} complete days`,
     },
     {
       label: 'Best day',
@@ -157,19 +157,9 @@ export function QuickStats({ data }) {
   ];
 
   return (
-    <Card className="grid grid-cols-2 divide-line sm:grid-cols-3 lg:grid-cols-6">
-      {items.map((item, i) => (
-        <div
-          key={item.label}
-          className={clsx(
-            'px-4 py-3',
-            i % 2 === 0 && 'border-r border-line sm:border-r',
-            'border-b border-line sm:border-b-0',
-            i >= 4 && 'border-b-0',
-            i % 3 === 2 && 'sm:border-r-0 lg:border-r',
-            i !== 5 && 'lg:border-r'
-          )}
-        >
+    <Card className="grid grid-cols-2 gap-px bg-line sm:grid-cols-3 lg:grid-cols-6">
+      {items.map((item) => (
+        <div key={item.label} className="bg-surface px-3 py-2.5 sm:px-4 sm:py-3">
           <p className="truncate text-[11px] uppercase tracking-wide text-ink-dim">{item.label}</p>
           <p
             className={clsx(

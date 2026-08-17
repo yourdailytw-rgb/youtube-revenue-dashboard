@@ -52,7 +52,7 @@ export function MonthsView({ data, onPickMonth }) {
             </div>
           }
         />
-        <div className="overflow-x-auto px-4 pb-4">
+        <div className="scroll-x px-4 pb-4">
           <table className="w-full min-w-[720px] border-separate border-spacing-1">
             <thead>
               <tr className="text-[11px] uppercase tracking-wide text-ink-dim">
@@ -186,7 +186,7 @@ export function MonthsView({ data, onPickMonth }) {
 
       <Card className="overflow-hidden">
         <CardHeader title="Monthly detail" />
-        <div className="overflow-x-auto">
+        <div className="scroll-x">
           <table className="w-full min-w-[760px] border-collapse text-sm">
             <thead>
               <tr className="border-y border-line bg-surface-2/40 text-[11px] uppercase tracking-wide text-ink-dim">

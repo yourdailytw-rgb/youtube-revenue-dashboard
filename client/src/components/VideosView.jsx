@@ -201,7 +201,7 @@ export function VideosView({ range, channels, allChannels = [] }) {
         <div className="space-y-2 px-5 pb-4">
           {GROUPS.map((group) => (
             <div key={group} className="flex flex-wrap items-center gap-1.5">
-              <span className="w-20 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-ink-dim">
+              <span className="w-full text-[10px] font-semibold uppercase tracking-wider text-ink-dim sm:w-20 sm:shrink-0">
                 {group}
               </span>
               {RANKINGS.filter((r) => r.group === group).map((r) => {
@@ -323,7 +323,7 @@ export function VideosView({ range, channels, allChannels = [] }) {
                   href={`https://www.youtube.com/watch?v=${video.videoId}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="group grid grid-cols-[28px_92px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40"
+                  className="group grid grid-cols-[22px_72px_minmax(0,1fr)] items-center gap-2.5 px-3 py-3 transition-colors hover:bg-surface-2/40 sm:grid-cols-[28px_92px_minmax(0,1fr)_auto] sm:gap-3 sm:px-4"
                 >
                   <span
                     className={clsx(
@@ -334,7 +334,7 @@ export function VideosView({ range, channels, allChannels = [] }) {
                     {index + 1}
                   </span>
 
-                  <span className="relative overflow-hidden rounded-md bg-surface-2" style={{ height: 52 }}>
+                  <span className="relative overflow-hidden rounded-md bg-surface-2" style={{ height: 44 }}>
                     {video.thumbnail ? (
                       <img src={video.thumbnail} alt="" className="h-full w-full object-cover" loading="lazy" />
                     ) : (
@@ -399,10 +399,12 @@ export function VideosView({ range, channels, allChannels = [] }) {
                     </span>
                   </span>
 
-                  <span className="flex shrink-0 items-center gap-5 text-right">
+                  {/* On phones the metrics move to their own row spanning the
+                      full width, so nothing gets clipped. */}
+                  <span className="col-span-3 flex items-center justify-between gap-3 border-t border-line-soft pt-2 sm:col-span-1 sm:justify-end sm:gap-5 sm:border-0 sm:pt-0">
                     <MetricCell label="Revenue" value={formatMoney(video.revenue ?? 0, { decimals: 0 })} dim={sort !== 'revenue'} />
-                    <MetricCell label="Period views" value={formatNumberShort(video.views)} dim={sort !== 'views'} className="hidden lg:block" />
-                    <MetricCell label="All-time" value={formatNumberShort(video.lifetimeViews)} dim={sort !== 'lifetimeViews'} className="hidden xl:block" />
+                    <MetricCell label="Period" value={formatNumberShort(video.views)} dim={sort !== 'views'} />
+                    <MetricCell label="All-time" value={formatNumberShort(video.lifetimeViews)} dim={sort !== 'lifetimeViews'} className="hidden sm:block" />
                     <MetricCell label="RPM" value={video.rpm != null ? formatMoney(video.rpm) : '—'} dim={sort !== 'rpm'} className="hidden xl:block" />
                     <MetricCell
                       label={active.label}
@@ -429,7 +431,7 @@ export function VideosView({ range, channels, allChannels = [] }) {
 
 function MetricCell({ label, value, dim, highlight, className }) {
   return (
-    <span className={clsx('w-20 text-right', className)}>
+    <span className={clsx('min-w-0 text-right sm:w-20', className)}>
       <span className="block text-[10px] uppercase tracking-wide text-ink-dim">{label}</span>
       <span
         className={clsx(

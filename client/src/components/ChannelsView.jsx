@@ -72,8 +72,8 @@ export function ChannelsView({ data, metric, compact = false }) {
             title="Channel performance"
             subtitle={`${data.range.days} days · sorted by ${COLUMNS.find((c) => c.id === sort.key)?.label.toLowerCase()}`}
           />
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] border-collapse text-sm">
+          <div className="scroll-x">
+            <table className="w-full min-w-[760px] border-collapse text-sm">
               <thead>
                 <tr className="border-y border-line bg-surface-2/40 text-[11px] uppercase tracking-wide text-ink-dim">
                   <th className="px-4 py-2 text-left font-medium">Channel</th>

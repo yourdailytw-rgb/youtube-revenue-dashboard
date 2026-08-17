@@ -171,6 +171,12 @@ function deriveForChannel(channelId) {
     const views = close.view_count - baseline.view_count;
     if (!Number.isFinite(views) || views < 0) continue; // counter reset or correction
 
+    // YouTube's channel-level view counter updates in chunks, not continuously,
+    // so a short window often shows no movement at all. Zero measured views is
+    // "we haven't seen an update yet", NOT "this day earned nothing" — storing it
+    // would produce a 0 kr estimate and pollute every average downstream.
+    if (views === 0) continue;
+
     const isToday = date === todayPT;
     const closedLateEnough = ptHourOf(new Date(close.captured_at)) >= 22;
     // Only a full-day difference on a finished day counts as complete.

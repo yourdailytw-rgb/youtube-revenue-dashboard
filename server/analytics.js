@@ -185,12 +185,20 @@ function summarize(series) {
   // trailing days YouTube has not reported yet would understate the average.
   const daysWithRevenue = series.filter((d) => d.hasRevenueData);
 
+  // A partial day covers only part of the reporting day, so including it in an
+  // average mixes a fraction of a day with whole ones and drags the figure down.
+  // It counts toward the total, never toward the average.
+  const completeDays = daysWithRevenue.filter((d) => !d.livePartial);
+  const completeRevenue = completeDays.reduce((a, d) => a + d.effectiveRevenue, 0);
+
   out.days = series.length;
   out.daysWithData = daysWithRevenue.length;
+  out.daysComplete = completeDays.length;
+  out.daysPartial = daysWithRevenue.length - completeDays.length;
   out.daysAwaitingData = series.length - daysWithRevenue.length;
   out.estimatedDays = estimatedDays;
-  out.dailyAverage = daysWithRevenue.length ? out.effectiveRevenue / daysWithRevenue.length : 0;
-  out.bestDay = daysWithRevenue.reduce(
+  out.dailyAverage = completeDays.length ? completeRevenue / completeDays.length : 0;
+  out.bestDay = completeDays.reduce(
     (best, d) => (!best || d.effectiveRevenue > best.effectiveRevenue ? d : best),
     null
   );

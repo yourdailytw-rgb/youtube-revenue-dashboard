@@ -394,6 +394,11 @@ function estimateChannel(history, options = {}) {
     const row = sorted.find((r) => r.date === date);
     if (!row || row.views_present !== 1) continue;
 
+    // No views measured means nothing to model. Producing a 0 kr "estimate"
+    // would read as a real figure and would be counted as a day with data.
+    const measuredViews = (row.lf_views ?? 0) + (row.sf_views ?? 0);
+    if (measuredViews <= 0) continue;
+
     const result = estimateForDate(sorted, row, opts);
     if (!result) continue;
 

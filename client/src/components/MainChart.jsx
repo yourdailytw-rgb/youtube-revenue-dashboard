@@ -114,8 +114,10 @@ export function MainChart({ data, metric, onMetricChange, compareLabel }) {
 
   return (
     <Card className="overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3">
+        {/* Metric tabs scroll horizontally rather than wrapping into a wall of
+            buttons on a phone. */}
+        <div className="scroll-x -mx-3 w-full px-3 sm:mx-0 sm:w-auto sm:px-0">
           <Tabs
             size="sm"
             tabs={METRIC_ORDER.map((id) => ({
@@ -125,7 +127,7 @@ export function MainChart({ data, metric, onMetricChange, compareLabel }) {
             }))}
             value={metric}
             onChange={onMetricChange}
-            className="max-w-full overflow-x-auto"
+            className="w-max"
           />
         </div>
         <div className="flex items-center gap-2">
@@ -140,7 +142,7 @@ export function MainChart({ data, metric, onMetricChange, compareLabel }) {
         </div>
       </div>
 
-      <div className="h-[340px] w-full px-2 py-3 sm:h-[400px]">
+      <div className="h-[240px] w-full px-1 py-2 sm:h-[400px] sm:px-2 sm:py-3">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
             data={chartType === 'stacked' ? stackedData : chartData}
@@ -175,7 +177,7 @@ export function MainChart({ data, metric, onMetricChange, compareLabel }) {
               tick={{ fontSize: 11, fill: '#7c8497' }}
               tickLine={false}
               axisLine={false}
-              width={52}
+              width={44}
               tickCount={tickCount}
             />
 

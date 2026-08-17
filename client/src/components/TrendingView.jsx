@@ -216,7 +216,7 @@ export function TrendingView({ channels, allChannels = [] }) {
                   href={`https://www.youtube.com/watch?v=${video.videoId}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-surface-2/40"
+                  className="group flex flex-wrap items-center gap-2.5 px-3 py-3 transition-colors hover:bg-surface-2/40 sm:flex-nowrap sm:gap-3 sm:px-4"
                 >
                   <span
                     className={clsx(
@@ -227,7 +227,7 @@ export function TrendingView({ channels, allChannels = [] }) {
                     {index + 1}
                   </span>
 
-                  <span className="relative shrink-0 overflow-hidden rounded-md bg-surface-2" style={{ width: 92, height: 52 }}>
+                  <span className="relative shrink-0 overflow-hidden rounded-md bg-surface-2 max-sm:!w-[72px] max-sm:!h-[41px]" style={{ width: 92, height: 52 }}>
                     {video.thumbnail ? (
                       <img src={video.thumbnail} alt="" className="h-full w-full object-cover" loading="lazy" />
                     ) : (
@@ -292,7 +292,7 @@ export function TrendingView({ channels, allChannels = [] }) {
                     </span>
                   </span>
 
-                  <span className="shrink-0 text-right">
+                  <span className="ml-auto shrink-0 text-right">
                     <span
                       className={clsx(
                         'block text-lg font-bold tabular',

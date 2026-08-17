@@ -113,7 +113,7 @@ export function EstimatorView({ data }) {
       {dates.length > 0 && (
         <Card className="overflow-hidden">
           <CardHeader title="Current estimates" subtitle="Per channel, per day, with the inputs behind each number" />
-          <div className="overflow-x-auto">
+          <div className="scroll-x">
             <table className="w-full min-w-[820px] border-collapse text-sm">
               <thead>
                 <tr className="border-y border-line bg-surface-2/40 text-[11px] uppercase tracking-wide text-ink-dim">

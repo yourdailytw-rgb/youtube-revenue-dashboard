@@ -15,12 +15,17 @@ export function Card({ className, children, ...props }) {
 
 export function CardHeader({ title, subtitle, action, className }) {
   return (
-    <div className={clsx('flex items-start justify-between gap-4 px-5 pt-4 pb-3', className)}>
+    <div
+      className={clsx(
+        'flex flex-wrap items-start justify-between gap-2 px-4 pt-3.5 pb-3 sm:flex-nowrap sm:gap-4 sm:px-5 sm:pt-4',
+        className
+      )}
+    >
       <div className="min-w-0">
         <h3 className="text-sm font-semibold tracking-tight text-ink">{title}</h3>
         {subtitle && <p className="mt-0.5 text-xs text-ink-dim">{subtitle}</p>}
       </div>
-      {action && <div className="shrink-0">{action}</div>}
+      {action && <div className="w-full shrink-0 sm:w-auto">{action}</div>}
     </div>
   );
 }
@@ -32,7 +37,7 @@ export function Button({ variant = 'default', size = 'md', className, children, 
         'inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
         'disabled:cursor-not-allowed disabled:opacity-50',
-        size === 'sm' && 'px-2.5 py-1.5 text-xs',
+        size === 'sm' && 'px-2.5 py-1.5 text-xs max-sm:py-2',
         size === 'md' && 'px-3 py-2 text-sm',
         variant === 'default' && 'border border-line bg-surface-2 text-ink hover:bg-line',
         variant === 'primary' && 'bg-accent text-white hover:bg-accent/85',

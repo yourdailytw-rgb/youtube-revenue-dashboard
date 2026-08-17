@@ -214,17 +214,21 @@ export default function App() {
       )}
 
       {/* Controls */}
-      <div className="sticky top-[57px] z-30 border-b border-line bg-bg/85 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-2 px-4 py-2.5 sm:px-6">
-          <Tabs
-            tabs={TABS}
-            value={state.tab}
-            onChange={(tab) => patch({ tab })}
-            size="sm"
-            className="max-w-full overflow-x-auto"
-          />
+      <div className="sticky top-[53px] z-30 border-b border-line bg-bg/85 backdrop-blur-xl sm:top-[57px]">
+        <div className="mx-auto max-w-[1600px] px-3 py-2 sm:flex sm:flex-wrap sm:items-center sm:gap-2 sm:px-6 sm:py-2.5">
+          {/* Tabs get their own scrollable row on phones so they never squeeze
+              the date picker off screen. */}
+          <div className="scroll-x -mx-3 px-3 pb-2 sm:mx-0 sm:px-0 sm:pb-0">
+            <Tabs
+              tabs={TABS}
+              value={state.tab}
+              onChange={(tab) => patch({ tab })}
+              size="sm"
+              className="w-max"
+            />
+          </div>
 
-          <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
             {state.tab !== 'settings' && state.tab !== 'estimator' && state.tab !== 'trending' && (
               <>
                 <ChannelFilter
@@ -235,7 +239,7 @@ export default function App() {
                 <select
                   value={state.compare}
                   onChange={(e) => patch({ compare: e.target.value })}
-                  className="rounded-lg border border-line bg-surface px-2.5 py-2 text-[13px] font-medium text-ink focus:border-accent/60 focus:outline-none"
+                  className="max-w-[46vw] truncate rounded-lg border border-line bg-surface px-2.5 py-2 text-[13px] font-medium text-ink focus:border-accent/60 focus:outline-none sm:max-w-none"
                   title="What the current period is compared against"
                 >
                   {COMPARE_OPTIONS.map((opt) => (
@@ -261,7 +265,7 @@ export default function App() {
         </div>
       </div>
 
-      <main className="mx-auto max-w-[1600px] space-y-4 px-4 py-4 sm:px-6 sm:py-5">
+      <main className="mx-auto max-w-[1600px] space-y-3 px-3 py-3 sm:space-y-4 sm:px-6 sm:py-5">
         {error && (
           <Card className="border-neg/30 bg-neg/5">
             <div className="flex items-start gap-3 px-4 py-3">

@@ -30,11 +30,24 @@ body,
 
 body {
   margin: 0;
+  /* Wide content (tables, charts) scrolls inside its own container; the page
+     itself must never scroll sideways on a phone. */
+  overflow-x: hidden;
   background: var(--color-bg);
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   font-feature-settings: 'tnum' 1;
+}
+
+/* Horizontal scrollers get momentum scrolling and no visible bar on mobile. */
+.scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.scroll-x::-webkit-scrollbar {
+  display: none;
 }
 
 /* Numbers line up in tables and stat cards. */

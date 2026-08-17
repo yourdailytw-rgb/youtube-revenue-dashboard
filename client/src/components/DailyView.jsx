@@ -91,7 +91,7 @@ export function DailyView({ data, exportUrl, channelExportUrl }) {
       {filtered.length === 0 ? (
         <EmptyState title="No rows" description="Try a different filter or date range." />
       ) : (
-        <div className="max-h-[70vh] overflow-auto">
+        <div className="scroll-x max-h-[70vh] overflow-y-auto">
           <table className="w-full min-w-[900px] border-collapse text-sm">
             <thead className="sticky top-0 z-10">
               <tr className="border-y border-line bg-surface-2 text-[11px] uppercase tracking-wide text-ink-dim">
