@@ -1,0 +1,288 @@
+# YouTube Revenue Dashboard v2
+
+Multi-channel YouTube revenue and analytics dashboard with **real-time revenue
+estimation** — it fills YouTube's ~2-day revenue reporting gap by modelling
+those days from long-form view counts, which arrive live.
+
+Rebuilt from v1. The OAuth channel connection, the 3-layer token persistence and
+the on-disk token format are **unchanged**, so deploying this over v1 keeps every
+connected channel working.
+
+---
+
+## What's new vs v1
+
+| Area | v1 | v2 |
+|---|---|---|
+| Revenue for the last 2 days | blank | **modelled, with a confidence range and a published accuracy score** |
+| Data source | live API call on every page load | SQLite cache on the Railway volume, background sync |
+| Date range | 4 preset buttons | presets + two-month calendar + month/quarter/year grid + ← → period stepping |
+| Comparison | none | previous period, same period last year, month-over-month, year-over-year |
+| Metrics | revenue, long-form views, short-form views | + watch time, subscribers, RPM, CPM, avg view duration, top videos |
+| Analysis views | 3 sub-tabs | Overview, Channels, Months, Trends, Videos, Daily log, Estimator, Settings |
+| Frontend | 1094-line single HTML file | React + Vite + Tailwind + Recharts |
+| Login | one shared password | per-user logins (still supports the shared password) |
+| Sessions | in-memory, wiped on deploy | stored in SQLite, survive deploys |
+| Export | none | CSV, combined or per channel |
+
+---
+
+## Quick start (local)
+
+```bash
+npm install
+cp .env.example .env          # fill in CLIENT_ID and CLIENT_SECRET
+npm run build                 # builds the React client
+npm start                     # http://localhost:3000
+```
+
+For development with hot reload:
+
+```bash
+npm run dev                   # Express on :3000, Vite on :5173 (use :5173)
+```
+
+To explore the whole dashboard **without** Google credentials:
+
+```bash
+npm run seed                  # 5 fake channels, ~2.5 years of realistic data
+npm start
+```
+
+Seeded channels are flagged `mock: true` in `tokens.json`, which makes the token
+refresher and the sync engine skip them. Delete `data/` and `tokens.json` to
+clear them.
+
+---
+
+## Project structure
+
+```
+server/
+  index.js       entry point, middleware, static hosting, schedulers
+  config.js      env + data directory resolution (/data volume vs ./data)
+  tokens.js      3-layer OAuth token persistence  ← do not simplify
+  oauth.js       Google client factory + proactive token refresh
+  youtube.js     YouTube Analytics v2 / Data v3 queries
+  db.js          SQLite schema + queries (node:sqlite, no native build)
+  sync.js        API → database sync engine, estimate recomputation
+  estimator.js   the revenue model                ← the heart of v2
+  analytics.js   aggregation: series, summaries, comparisons, months, forecast
+  auth.js        dashboard logins + sessions
+  routes.js      all HTTP routes
+  util/dates.js  date helpers (ISO strings throughout)
+
+client/src/
+  App.jsx           layout, tabs, URL state
+  lib/              api client, formatting, metric definitions, range presets
+  components/       one file per view + shared UI primitives
+
+scripts/
+  seed-mock.js       realistic synthetic data
+  backtest.js        score the estimator against real history
+  test-estimator.js  assertions for the model's edge cases
+```
+
+---
+
+## The revenue estimator
+
+**The problem.** YouTube reports revenue ~2 days late but view counts within
+hours. Every day, the last two days of the dashboard showed a revenue hole.
+
+**The model.** Per channel, recomputed on every sync:
+
+1. **Fit RPM.** Weighted least squares of revenue against long-form and Shorts
+   views *separately* over the trailing 56 days, with a 21-day half-life recency
+   weight. Shorts and long-form earn very different RPMs, so each gets its own
+   coefficient. Degenerate cases fall back through `longform-only` →
+   `shorts-only` → `blended-rpm`.
+2. **Weekday correction.** Median actual/predicted ratio for that weekday over
+   120 days, damped 70% toward 1 and clamped to [0.75, 1.35].
+3. **Trend correction.** Last 7 days' ratio vs the last 28, damped 60% and
+   clamped to [0.85, 1.2].
+4. **Interval.** An 80% range from the model's own walk-forward back-test error
+   on that channel, so a noisy channel honestly shows a wider band.
+5. **Replacement.** The moment YouTube reports a day, `pruneSettledEstimates()`
+   deletes the estimate and the real figure takes over everywhere.
+
+**Which days get estimated.** Walks backwards from the newest day with views and
+claims days until it reaches one that looks settled. This catches both failure
+modes: YouTube returning no revenue row at all, *and* YouTube returning a row
+that is only partially settled (including a bare `0`). Capped at 5 days
+(`maxLookbackDays`) so a genuinely weak stretch can never cascade backwards.
+
+**Accuracy.** Against synthetic data the model scores ~3.4% median error — but
+synthetic data is generated by a process the model can fit, so treat that as an
+upper bound on quality, not a forecast. **Check the real number on the Estimator
+tab after a week of live data.** Expect somewhere in the 5–15% range per channel.
+Every estimate carries its own back-tested error, so the dashboard tells you how
+much to trust it rather than asking you to assume.
+
+**Verifying it yourself.**
+
+```bash
+npm run backtest              # per-channel median error, MAPE, bias, sigma
+npm run backtest -- --days 90
+npm test                      # edge-case assertions
+```
+
+The **Estimator** tab shows the same thing in the UI: current estimates with
+every input behind them, and a chart of what the model predicted vs what YouTube
+actually paid for the last 45 days.
+
+**Estimates are never presented as reported figures.** They are purple
+everywhere, badged "est", separated in the API (`revenue` vs `estimatedRevenue`
+vs `effectiveRevenue`), and flagged `is_estimated` in CSV exports.
+
+---
+
+## Environment variables
+
+Required:
+
+| Variable | Notes |
+|---|---|
+| `CLIENT_ID` | Google OAuth 2.0 Client ID |
+| `CLIENT_SECRET` | Google OAuth 2.0 Client Secret |
+
+Access control (set at least one):
+
+| Variable | Notes |
+|---|---|
+| `DASHBOARD_USERS` | `name:password` pairs, comma separated — e.g. `fatlum:pw1,colleague:pw2` |
+| `DASHBOARD_PASSWORD` | single shared password (v1 behaviour, still works) |
+
+Token backup (all three needed for the Railway layer):
+
+| Variable | Notes |
+|---|---|
+| `RAILWAY_API_TOKEN` | Railway API token |
+| `RAILWAY_SERVICE_ID` | `4d05fe2c-e83e-4cb5-8279-e0b1406850a7` |
+| `RAILWAY_ENVIRONMENT_ID` | `8c28af68-041a-4bcc-be39-58b783760245` |
+| `STORED_TOKENS` | written automatically — never edit by hand |
+
+Optional:
+
+| Variable | Default | Notes |
+|---|---|---|
+| `CURRENCY` | `SEK` | passed explicitly on every revenue query |
+| `BACKFILL_START` | `2024-01-01` | how far the first full sync reaches |
+| `SYNC_REFRESH_DAYS` | `14` | trailing window re-fetched each sync |
+| `SYNC_INTERVAL_MINUTES` | `180` | background sync cadence |
+| `PORT` | `3000` | set by Railway |
+
+`RAILWAY_PUBLIC_DOMAIN` is set by Railway and used to build the OAuth redirect URI.
+
+---
+
+## API
+
+Public: `GET/POST /login`, `GET /logout`, `GET /auth`, `GET /oauth2callback`, `GET /healthz`
+
+Everything else requires a session.
+
+| Route | Purpose |
+|---|---|
+| `GET /api/me` | current user + currency |
+| `GET /api/channels` | connected channels with health and last sync |
+| `PATCH /api/channels/:id` | rename, group, reorder, hide |
+| `DELETE /api/channels/:id?purge=true` | disconnect (optionally drop stored history) |
+| `GET /api/analytics` | **the main endpoint** — series, summary, comparison, breakdown, monthly, rolling, forecast, estimation |
+| `GET /api/estimates?channel=` | full estimator diagnostics + back-test |
+| `GET /api/videos` | top videos for a range (1-hour cache) |
+| `GET /api/export?scope=total\|channel` | CSV |
+| `GET /api/sync/status` · `POST /api/sync?full=true` | sync state and manual trigger |
+| `GET /api/token-health` · `POST /api/token-refresh` | token diagnostics |
+| `GET /api/admin/storage-status` · `GET /api/admin/export-tokens` | storage diagnostics, token backup |
+
+`/api/analytics` accepts `start`, `end` (`YYYY-MM-DD`), `channels` (comma-separated
+IDs, omit for all) and `compare` (`previous` | `year` | `none`).
+
+---
+
+## CRITICAL — read before changing anything
+
+These are the v1 pitfalls, all still live, plus the new ones.
+
+1. **Content type values are camelCase.** The API returns `videoOnDemand` and
+   `shorts`. Using `VIDEO_ON_DEMAND` returns zero rows. This bit v1 already.
+2. **Currency must be explicit.** The Analytics API returns USD by default. Every
+   revenue query passes `currency`. Any new revenue query must too.
+3. **OAuth consent screen must stay in Production mode.** Testing mode revokes
+   refresh tokens after 7 days and silently kills every connection.
+4. **`access_type: 'offline'` and `prompt: 'consent'` are both required** to
+   reliably receive a refresh token.
+5. **Do not remove any of the 3 token persistence layers**, and do not drop the
+   `updateRailwayEnvVar()` call from `saveTokens()`. Losing this loses every
+   channel connection on the next deploy.
+6. **The Railway Volume must stay mounted at `/data`.** Both `tokens.json` and
+   `metrics.db` live there. Without it, tokens *and* all cached history are wiped
+   on every deploy. The Settings tab shows a red banner when the volume is missing.
+7. **Node 24+ is required.** The metrics database uses built-in `node:sqlite`,
+   which is flagged on older runtimes. `engines.node` and `.nvmrc` pin this;
+   `server/db.js` fails loudly with instructions if it is unavailable.
+8. **Express 5, not 4.** Notably `app.get('*')` throws — the SPA fallback uses
+   `app.use()` instead.
+9. **Never present an estimate as a reported figure.** If you add a view, keep
+   `revenue` / `estimatedRevenue` / `effectiveRevenue` distinct and keep the
+   purple treatment.
+10. **`revenue_present` / `views_present` are load-bearing.** They distinguish
+    "genuinely zero" from "not reported yet". Writing a `0` without the flag
+    would make the estimator think a day is settled.
+
+### Security changes made in v2
+
+- v1 logged the full base64 token blob to stdout on every save
+  (`TOKENS_BACKUP_BASE64: …`), putting live refresh tokens in Railway's log
+  history. **Removed.** If those logs are still retained, consider rotating the
+  OAuth client secret.
+- Password comparison is now timing-safe.
+- Session cookies get `Secure` when running on a Railway domain.
+
+---
+
+## Deployment
+
+Push to `main` — Railway auto-deploys. `railway.json` sets the build to
+`npm run build` (which installs and builds the client) and the start command to
+`npm start`.
+
+A root `server.js` shim exists in case the Railway service still has
+`node server.js` pinned as its start command; it just requires
+`server/index.js`. Safe to delete once the start command is `npm start`.
+
+**First deploy over v1:**
+
+1. Confirm the volume is still mounted at `/data`.
+2. Add `DASHBOARD_USERS` if you want per-user logins.
+3. Deploy. Existing tokens are picked up from `/data/tokens.json` (or
+   `STORED_TOKENS`), so channels stay connected.
+4. The database starts empty and backfills from `BACKFILL_START` on the first
+   sync — that is many API calls and takes a few minutes. Watch the logs, or the
+   Settings tab.
+5. Estimates need ~2 weeks of history per channel before they are meaningful.
+   Below `minTrainingDays` (10) the model falls back to a plain average RPM and
+   reports low confidence.
+
+**If the app is down:** check the Railway dashboard, then status.railway.app, then
+Restart, then Redeploy.
+
+---
+
+## Tuning the estimator
+
+All knobs live in `DEFAULTS` at the top of `server/estimator.js`:
+
+| Knob | Default | Effect |
+|---|---|---|
+| `trainWindowDays` | 56 | how much history the RPM fit sees |
+| `halfLifeDays` | 21 | how fast old days lose weight |
+| `dowDamping` | 0.7 | how strongly the weekday effect is applied |
+| `trendDamping` | 0.6 | how strongly a recent RPM shift is chased |
+| `backtestDays` | 45 | days used to measure accuracy |
+| `partialDayThreshold` | 0.55 | below this fraction of predicted, a reported day is treated as unsettled |
+| `maxLookbackDays` | 5 | hard cap on trailing days that may be re-estimated |
+
+After changing any of them, run `npm run backtest` and compare the median error
+before and after. If it gets worse, revert.

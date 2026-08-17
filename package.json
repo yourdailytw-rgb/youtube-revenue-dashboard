@@ -1,18 +1,26 @@
 {
   "name": "youtube-revenue-dashboard",
-  "version": "1.0.0",
-  "description": "",
-  "main": "server.js",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Multi-channel YouTube revenue & analytics dashboard with real-time revenue estimation",
+  "main": "server/index.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server/index.js",
+    "dev": "concurrently -n server,client -c blue,magenta \"node --watch server/index.js\" \"npm --prefix client run dev\"",
+    "build": "npm --prefix client install --no-audit --no-fund && npm --prefix client run build",
+    "seed": "node scripts/seed-mock.js",
+    "backtest": "node scripts/backtest.js",
+    "test": "node scripts/test-estimator.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "dependencies": {
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
-    "googleapis": "^171.4.0",
-    "open": "^11.0.0"
+    "googleapis": "^171.4.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
   }
 }
