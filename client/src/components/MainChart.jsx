@@ -403,7 +403,9 @@ function ChartTooltip({ active, payload, label, config, channels, chartType, com
           {row.isEstimated && (
             <p className="mt-1 flex items-center gap-1 text-[10px] text-est">
               <Zap size={9} />
-              Modelled — YouTube has not reported this day yet
+              {row.raw?.livePartial
+                ? `Partial day — ${row.raw.liveCoveredHours?.toFixed(1) ?? '?'}h of live views measured so far`
+                : 'Modelled — YouTube has not reported this day yet'}
             </p>
           )}
         </div>

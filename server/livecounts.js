@@ -143,24 +143,44 @@ function deriveForChannel(channelId) {
 
   const dates = [...closingByDate.keys()].sort();
   const todayPT = ptDateOf();
+  const now = new Date();
   const derived = [];
 
   for (const date of dates) {
     // Only fill days Analytics has not published.
     if (date <= lastAnalytics) continue;
 
-    const previousDate = addDays(date, -1);
-    const previousClose = closingByDate.get(previousDate);
-    if (!previousClose) continue; // no baseline to difference against
-
     const close = closingByDate.get(date);
-    const views = close.view_count - previousClose.view_count;
+    const previousClose = closingByDate.get(addDays(date, -1));
+
+    let baseline = previousClose;
+    let partial = false;
+
+    if (!baseline) {
+      // No previous-day closing counter to difference against. That happens on
+      // the first day of polling, and for any day whose predecessor we missed.
+      // Rather than withhold everything, fall back to differencing within the
+      // day itself — which yields the views accumulated SO FAR, from the first
+      // snapshot of the day onwards. Honest, but incomplete, so it is flagged.
+      const withinDay = firstByDate.get(date);
+      if (!withinDay || withinDay.captured_at === close.captured_at) continue;
+      baseline = withinDay;
+      partial = true;
+    }
+
+    const views = close.view_count - baseline.view_count;
     if (!Number.isFinite(views) || views < 0) continue; // counter reset or correction
 
-    // A past day is complete; today is still accumulating.
     const isToday = date === todayPT;
     const closedLateEnough = ptHourOf(new Date(close.captured_at)) >= 22;
-    const complete = !isToday && closedLateEnough;
+    // Only a full-day difference on a finished day counts as complete.
+    const complete = !partial && !isToday && closedLateEnough;
+
+    // How much of the reporting day these snapshots actually span.
+    const coveredHours = (new Date(close.captured_at) - new Date(baseline.captured_at)) / 3600000;
+    const elapsedHours = isToday
+      ? ptHourOf(now) + now.getUTCMinutes() / 60
+      : 24;
 
     const ratio = recentSplitRatio(channelId, lastAnalytics);
     const lfViews = Math.round(views * ratio);
@@ -172,8 +192,11 @@ function deriveForChannel(channelId) {
       lfViews,
       sfViews: views - lfViews,
       complete,
+      partial: partial || isToday,
+      coveredHours,
+      elapsedHours,
       splitRatio: ratio,
-      firstSnapshot: previousClose.captured_at,
+      firstSnapshot: baseline.captured_at,
       lastSnapshot: close.captured_at,
       isToday,
     });
@@ -402,6 +425,9 @@ function liveStatus() {
         views: r.views,
         lfViews: r.lf_views,
         complete: r.complete === 1,
+        partial: r.partial === 1,
+        coveredHours: r.covered_hours,
+        elapsedHours: r.elapsed_hours,
       })),
       accuracySamples: accuracy.length,
       medianAbsError: errors.length ? median(errors) : null,

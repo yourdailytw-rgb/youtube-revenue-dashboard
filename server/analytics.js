@@ -53,6 +53,7 @@ const emptyDay = (date) => {
   day.hasViews = false;
   day.viewsAreLive = false;
   day.liveComplete = false;
+  day.livePartial = false;
   return day;
 };
 
@@ -138,6 +139,11 @@ function buildSeries({ channelIds, start, end, includeEstimates = true, includeL
       day.hasViews = true;
       day.viewsAreLive = true;
       day.liveComplete = live.complete === 1;
+      // A partial day only covers part of the reporting day, so its revenue
+      // figure is "so far", not a full day. Flagged so the UI says so.
+      day.livePartial = live.partial === 1;
+      day.liveCoveredHours = live.covered_hours;
+      day.liveElapsedHours = live.elapsed_hours;
     };
     apply(totals.get(live.date));
     apply(perChannel.get(live.channel_id)?.get(live.date));

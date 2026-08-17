@@ -107,9 +107,17 @@ export function QuickStats({ data }) {
 
   const items = [
     {
-      label: last?.isEstimated ? 'Today (estimated)' : 'Latest day',
+      label: last?.livePartial
+        ? 'Today so far (est.)'
+        : last?.isEstimated
+          ? 'Latest day (estimated)'
+          : 'Latest day',
       value: formatMoney(last?.effectiveRevenue ?? 0),
-      hint: last ? formatDate(last.date, 'short') : '—',
+      hint: last
+        ? last.livePartial && last.liveCoveredHours
+          ? `${formatDate(last.date, 'short')} · ${last.liveCoveredHours.toFixed(1)}h measured`
+          : formatDate(last.date, 'short')
+        : '—',
       tone: last?.isEstimated ? 'est' : undefined,
     },
     {

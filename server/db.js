@@ -194,6 +194,12 @@ function addColumnIfMissing(table, column, definition) {
 }
 
 addColumnIfMissing('daily_metrics', 'views_source', "TEXT DEFAULT 'analytics'");
+// Partial-day coverage: how much of the reporting day the snapshots actually
+// span. Lets a same-day figure be shown honestly as "so far" instead of being
+// withheld until the day closes.
+addColumnIfMissing('live_daily', 'covered_hours', 'REAL');
+addColumnIfMissing('live_daily', 'elapsed_hours', 'REAL');
+addColumnIfMissing('live_daily', 'partial', 'INTEGER DEFAULT 0');
 
 // ---------------------------------------------------------------------------
 // Channels
@@ -531,13 +537,15 @@ function pruneSnapshots(beforeISO) {
 function upsertLiveDaily(row) {
   db.prepare(
     `INSERT INTO live_daily (channel_id, date, views, lf_views, sf_views, complete, split_ratio,
-                             first_snapshot, last_snapshot, computed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             first_snapshot, last_snapshot, covered_hours, elapsed_hours, partial,
+                             computed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(channel_id, date) DO UPDATE SET
        views = excluded.views, lf_views = excluded.lf_views, sf_views = excluded.sf_views,
        complete = excluded.complete, split_ratio = excluded.split_ratio,
        first_snapshot = excluded.first_snapshot, last_snapshot = excluded.last_snapshot,
-       computed_at = excluded.computed_at`
+       covered_hours = excluded.covered_hours, elapsed_hours = excluded.elapsed_hours,
+       partial = excluded.partial, computed_at = excluded.computed_at`
   ).run(
     row.channelId,
     row.date,
@@ -548,6 +556,9 @@ function upsertLiveDaily(row) {
     row.splitRatio ?? null,
     row.firstSnapshot ?? null,
     row.lastSnapshot ?? null,
+    row.coveredHours ?? null,
+    row.elapsedHours ?? null,
+    row.partial ? 1 : 0,
     new Date().toISOString()
   );
 }
