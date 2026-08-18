@@ -191,13 +191,13 @@ export function MonthsView({ data, onPickMonth }) {
             <thead>
               <tr className="border-y border-line bg-surface-2/40 text-[11px] uppercase tracking-wide text-ink-dim">
                 <th className="px-4 py-2 text-left font-medium">Month</th>
-                <th className="px-3 py-2 text-right font-medium">Revenue</th>
-                <th className="px-3 py-2 text-right font-medium">vs prev month</th>
-                <th className="px-3 py-2 text-right font-medium">vs last year</th>
-                <th className="px-3 py-2 text-right font-medium">Views</th>
-                <th className="px-3 py-2 text-right font-medium">Long-form</th>
-                <th className="px-3 py-2 text-right font-medium">RPM</th>
-                <th className="px-3 py-2 text-right font-medium">Daily avg</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right font-medium">Revenue</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right font-medium">vs prev month</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right font-medium">vs last year</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right font-medium">Views</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right font-medium">Long-form</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right font-medium">RPM</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right font-medium">Daily avg</th>
               </tr>
             </thead>
             <tbody>
@@ -229,10 +229,10 @@ export function MonthsView({ data, onPickMonth }) {
                   <td className="px-3 py-2.5 text-right">
                     <Delta value={m.yoyPct} showIcon={false} />
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink-dim">{formatNumber(m.views)}</td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink-dim">{formatNumber(m.lfViews)}</td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink-dim">{formatMoney(m.rpm)}</td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink-dim">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular text-ink-dim">{formatNumber(m.views)}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular text-ink-dim">{formatNumber(m.lfViews)}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular text-ink-dim">{formatMoney(m.rpm)}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular text-ink-dim">
                     {formatMoney(m.dailyAverage, { decimals: 0 })}
                   </td>
                 </tr>

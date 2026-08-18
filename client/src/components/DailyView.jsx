@@ -104,13 +104,13 @@ export function DailyView({ data, exportUrl, channelExportUrl }) {
                   </button>
                 </th>
                 {scope === 'channel' && <th className="px-3 py-2 text-left font-medium">Channel</th>}
-                <th className="px-3 py-2 text-right font-medium">Revenue</th>
-                <th className="px-3 py-2 text-right font-medium">Views</th>
-                <th className="px-3 py-2 text-right font-medium">Long-form</th>
-                <th className="px-3 py-2 text-right font-medium">Shorts</th>
-                <th className="px-3 py-2 text-right font-medium">RPM</th>
-                <th className="px-3 py-2 text-right font-medium">Watch time</th>
-                <th className="px-3 py-2 text-right font-medium">Subs</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right font-medium">Revenue</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right font-medium">Views</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right font-medium">Long-form</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right font-medium">Shorts</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right font-medium">RPM</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right font-medium">Watch time</th>
+                <th className="whitespace-nowrap px-3 py-2 text-right font-medium">Subs</th>
               </tr>
             </thead>
             <tbody>
@@ -155,11 +155,11 @@ export function DailyView({ data, exportUrl, channelExportUrl }) {
                   >
                     {formatMoney(row.effectiveRevenue)}
                   </td>
-                  <td className="px-3 py-2 text-right tabular text-ink-dim">{formatNumber(row.views)}</td>
-                  <td className="px-3 py-2 text-right tabular text-ink-dim">{formatNumber(row.lf_views)}</td>
-                  <td className="px-3 py-2 text-right tabular text-ink-dim">{formatNumber(row.sf_views)}</td>
-                  <td className="px-3 py-2 text-right tabular text-ink-dim">{formatMoney(row.rpm)}</td>
-                  <td className="px-3 py-2 text-right tabular text-ink-dim">{formatHours(row.watch_hours)}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular text-ink-dim">{formatNumber(row.views)}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular text-ink-dim">{formatNumber(row.lf_views)}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular text-ink-dim">{formatNumber(row.sf_views)}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular text-ink-dim">{formatMoney(row.rpm)}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular text-ink-dim">{formatHours(row.watch_hours)}</td>
                   <td
                     className={clsx(
                       'px-3 py-2 text-right tabular',
@@ -176,23 +176,23 @@ export function DailyView({ data, exportUrl, channelExportUrl }) {
               <tfoot className="sticky bottom-0">
                 <tr className="border-t border-line bg-surface-2 font-semibold">
                   <td className="px-4 py-2.5 text-ink">Total</td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular text-ink">
                     {formatMoney(totalRow.effectiveRevenue)}
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink-dim">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular text-ink-dim">
                     {formatNumber(totalRow.views)}
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink-dim">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular text-ink-dim">
                     {formatNumber(totalRow.lf_views)}
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink-dim">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular text-ink-dim">
                     {formatNumber(totalRow.sf_views)}
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink-dim">{formatMoney(totalRow.rpm)}</td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink-dim">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular text-ink-dim">{formatMoney(totalRow.rpm)}</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular text-ink-dim">
                     {formatHours(totalRow.watch_hours)}
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink-dim">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular text-ink-dim">
                     {formatNumber(totalRow.subs_net)}
                   </td>
                 </tr>

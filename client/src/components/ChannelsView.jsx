@@ -66,19 +66,19 @@ export function ChannelsView({ data, metric, compact = false }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="space-y-4">
         <Card className="overflow-hidden">
           <CardHeader
             title="Channel performance"
             subtitle={`${data.range.days} days · sorted by ${COLUMNS.find((c) => c.id === sort.key)?.label.toLowerCase()}`}
           />
           <div className="scroll-x">
-            <table className="w-full min-w-[760px] border-collapse text-sm">
+            <table className="w-full min-w-[940px] border-collapse text-sm">
               <thead>
                 <tr className="border-y border-line bg-surface-2/40 text-[11px] uppercase tracking-wide text-ink-dim">
                   <th className="px-4 py-2 text-left font-medium">Channel</th>
                   {COLUMNS.map((col) => (
-                    <th key={col.id} className="px-3 py-2 text-right font-medium">
+                    <th key={col.id} className="whitespace-nowrap px-3 py-2 text-right font-medium">
                       <button
                         onClick={() => toggleSort(col.id)}
                         className={clsx(
@@ -112,7 +112,7 @@ export function ChannelsView({ data, metric, compact = false }) {
                         </div>
                       </td>
                       {COLUMNS.map((col) => (
-                        <td key={col.id} className="px-3 py-2.5 text-right tabular">
+                        <td key={col.id} className="whitespace-nowrap px-3 py-2.5 text-right tabular">
                           {col.type === 'delta' ? (
                             <Delta value={row[col.id]} showIcon={false} />
                           ) : col.id === 'share' ? (
@@ -129,7 +129,7 @@ export function ChannelsView({ data, metric, compact = false }) {
                               <span className="w-11 text-ink-dim">{col.format(row[col.id])}</span>
                             </div>
                           ) : (
-                            <span className={col.id === 'revenue' ? 'font-medium text-ink' : 'text-ink-dim'}>
+                            <span className={clsx('whitespace-nowrap', col.id === 'revenue' ? 'font-medium text-ink' : 'text-ink-dim')}>
                               {col.format(row[col.id])}
                             </span>
                           )}
@@ -141,33 +141,33 @@ export function ChannelsView({ data, metric, compact = false }) {
               </tbody>
               <tfoot>
                 <tr className="border-t border-line bg-surface-2/40 font-semibold">
-                  <td className="px-4 py-2.5 text-ink">Total</td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink">
+                  <td className="whitespace-nowrap px-4 py-2.5 text-ink">Total</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular text-ink">
                     {formatMoney(data.summary.effectiveRevenue)}
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink-dim">100%</td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular text-ink-dim">100%</td>
                   <td className="px-3 py-2.5 text-right">
                     <Delta value={data.comparison?.deltas?.effectiveRevenue?.pct} showIcon={false} />
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink-dim">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular text-ink-dim">
                     {formatNumber(data.summary.views)}
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink-dim">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular text-ink-dim">
                     {formatNumber(data.summary.lf_views)}
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink-dim">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular text-ink-dim">
                     {formatNumber(data.summary.sf_views)}
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink-dim">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular text-ink-dim">
                     {formatMoney(data.summary.rpm)}
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink-dim">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular text-ink-dim">
                     {formatHours(data.summary.watch_hours)}
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink-dim">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular text-ink-dim">
                     {formatNumber(data.summary.subs_net)}
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular text-ink-dim">
+                  <td className="whitespace-nowrap px-3 py-2.5 text-right tabular text-ink-dim">
                     {formatMoney(data.summary.dailyAverage, { decimals: 0 })}
                   </td>
                 </tr>
@@ -176,7 +176,7 @@ export function ChannelsView({ data, metric, compact = false }) {
           </div>
         </Card>
 
-        <div className="space-y-4">
+        <div className="grid gap-4 lg:grid-cols-2">
           <Card>
             <CardHeader title="Revenue share" subtitle="Who is carrying the period" />
             <div className="h-[210px] px-2 pb-2">
