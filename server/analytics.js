@@ -76,8 +76,16 @@ function addEstimate(day, est) {
   day.isEstimated = true;
 }
 
-/** Effective revenue + derived rates, applied once a day is fully assembled. */
-function finalizeDay(day) {
+/**
+ * Effective revenue + derived rates, applied once a day is fully assembled.
+ *
+ * `edgeDate` is the most recent day with reported views. Only days within
+ * SETTLE_WINDOW_DAYS of that edge are eligible to be treated as "not settled
+ * yet" — see the guard below for why that bound matters.
+ */
+const SETTLE_WINDOW_DAYS = 2;
+
+function finalizeDay(day, edgeDate = null) {
   // A day with no reported revenue and no estimate has NO DATA — it is not a
   // zero-revenue day. Conflating the two drags charts to the floor and poisons
   // averages, so it is flagged here and rendered as a gap downstream.
@@ -100,9 +108,28 @@ function finalizeDay(day) {
   // ~100%, so a large long-form shortfall means the day is not settled yet —
   // using it would inflate that day's RPM roughly twofold. Shorts legitimately
   // sit near 50%, which is why the test looks only at long-form.
+  // The guard is deliberately TIME-BOUNDED, not ratio-bounded. In August 2026
+  // YouTube split the metric: "views" now counts from ~1 second, while
+  // "engaged views" carries the older, stricter meaning. If that is the new
+  // steady state, long-form settles near ~55% rather than ~100% — and a purely
+  // ratio-based guard would then reject engaged views forever and understate
+  // RPM about twofold, which is precisely the error this feature exists to fix.
+  //
+  // So only the newest couple of days may be dismissed as unsettled. Anything
+  // older is taken at face value, whatever the ratio, and the numbers
+  // self-correct within two days under either interpretation.
   const lfRate = day.lf_views > 0 ? (day.lf_engaged_views ?? 0) / day.lf_views : 1;
-  const engagedUnsettled = day.lf_views > 0 && day.lf_engaged_views > 0 && lfRate < 0.95;
+  // A day is "near the edge" only when we know both dates and it falls within
+  // the settle window of the newest reported day. The period summary has no
+  // date, so it is never near the edge and always uses engaged views as-is.
+  const nearEdge =
+    Boolean(day.date) &&
+    Boolean(edgeDate) &&
+    diffDays(day.date, edgeDate) < SETTLE_WINDOW_DAYS;
+  const engagedUnsettled =
+    nearEdge && day.lf_views > 0 && day.lf_engaged_views > 0 && lfRate < 0.95;
   day.engagedUnsettled = engagedUnsettled;
+  day.lfEngagedRate = day.lf_views > 0 ? lfRate : null;
 
   const engaged =
     !engagedUnsettled && day.engaged_views > 0 ? day.engaged_views : day.views;
@@ -186,7 +213,11 @@ function buildSeries({ channelIds, start, end, includeEstimates = true, includeL
     if (c) addEstimate(c, est);
   }
 
-  const finalize = (map) => [...map.values()].map(finalizeDay);
+  // Most recent day Analytics actually reported views for — the settle edge.
+  const reportedDates = rows.filter((r) => r.views_present === 1).map((r) => r.date);
+  const edgeDate = reportedDates.length ? reportedDates.reduce((a, b) => (a > b ? a : b)) : null;
+
+  const finalize = (map) => [...map.values()].map((d) => finalizeDay(d, edgeDate));
 
   return {
     totals: finalize(totals),
@@ -209,7 +240,8 @@ function summarize(series) {
   }
 
   out.isEstimated = estimatedDays > 0;
-  finalizeDay(out);
+  // The summary has no single date, so it is never treated as near the edge.
+  finalizeDay(out, null);
 
   // Averages must divide by days that actually have revenue data. Counting the
   // trailing days YouTube has not reported yet would understate the average.
