@@ -31,6 +31,10 @@ const REVENUE_METRICS = [
 
 const CORE_METRICS = [
   'views',
+  // YouTube pays against ENGAGED views, not raw views. For Shorts the two
+  // diverge by ~50% (a raw view counts every play; an engaged view requires
+  // actual watching), so any RPM built on raw views understates reality.
+  'engagedViews',
   'estimatedMinutesWatched',
   'averageViewDuration',
   'subscribersGained',
@@ -40,7 +44,7 @@ const CORE_METRICS = [
   'shares',
 ];
 
-const SPLIT_METRICS = ['views', 'estimatedMinutesWatched'];
+const SPLIT_METRICS = ['views', 'engagedViews', 'estimatedMinutesWatched'];
 
 const VIDEO_METRICS = [
   'views',
@@ -152,6 +156,7 @@ async function fetchDailyMetrics({ auth, channelId, start, end, currency = confi
       for (const r of rows) {
         const day = touch(r.day);
         day.views = num(r.views) ?? 0;
+        day.engaged_views = num(r.engagedViews);
         day.watch_minutes = num(r.estimatedMinutesWatched);
         day.avg_view_duration = num(r.averageViewDuration);
         day.subs_gained = num(r.subscribersGained);
@@ -177,11 +182,14 @@ async function fetchDailyMetrics({ auth, channelId, start, end, currency = confi
         const type = r.creatorContentType;
         const views = num(r.views) ?? 0;
         const minutes = num(r.estimatedMinutesWatched) ?? 0;
+        const engaged = num(r.engagedViews) ?? views;
         if (type === CONTENT_TYPE_LONGFORM) {
           day.lf_views = (day.lf_views || 0) + views;
+          day.lf_engaged_views = (day.lf_engaged_views || 0) + engaged;
           day.lf_watch_minutes = (day.lf_watch_minutes || 0) + minutes;
         } else if (type === CONTENT_TYPE_SHORTS) {
           day.sf_views = (day.sf_views || 0) + views;
+          day.sf_engaged_views = (day.sf_engaged_views || 0) + engaged;
           day.sf_watch_minutes = (day.sf_watch_minutes || 0) + minutes;
         }
         day.views_present = 1;
@@ -197,6 +205,9 @@ async function fetchDailyMetrics({ auth, channelId, start, end, currency = confi
     if (values.views_present) {
       values.lf_views = values.lf_views ?? 0;
       values.sf_views = values.sf_views ?? 0;
+      values.lf_engaged_views = values.lf_engaged_views ?? values.lf_views;
+      values.sf_engaged_views = values.sf_engaged_views ?? values.sf_views;
+      values.engaged_views = values.engaged_views ?? values.views;
       values.lf_watch_minutes = values.lf_watch_minutes ?? 0;
       values.sf_watch_minutes = values.sf_watch_minutes ?? 0;
       // Marks these as reported figures, as opposed to the live-counter

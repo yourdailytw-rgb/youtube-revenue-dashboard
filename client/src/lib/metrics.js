@@ -40,6 +40,21 @@ export const METRICS = {
     formatShort: formatNumberShort,
     color: '#3b82f6',
   },
+  engagedViews: {
+    id: 'engagedViews',
+    label: 'Engaged views',
+    shortLabel: 'Engaged',
+    dayKey: 'effectiveEngagedViews',
+    summaryKey: 'effectiveEngagedViews',
+    deltaKey: 'engaged_views',
+    channelKey: 'engagedViews',
+    monthKey: 'engagedViews',
+    format: formatNumber,
+    formatShort: formatNumberShort,
+    color: '#14b8a6',
+    description:
+      'Views that actually counted as watched — the definition YouTube pays against. For Shorts this is roughly half of raw views.',
+  },
   lfViews: {
     id: 'lfViews',
     label: 'Long-form views',
@@ -106,7 +121,7 @@ export const METRICS = {
     formatShort: formatMoneyShort,
     color: '#facc15',
     aggregate: 'rate',
-    description: 'Revenue per 1000 total views',
+    description: 'Revenue per 1000 ENGAGED views — the views YouTube actually pays for.',
   },
   cpm: {
     id: 'cpm',
@@ -142,6 +157,7 @@ export const METRICS = {
 export const METRIC_ORDER = [
   'revenue',
   'views',
+  'engagedViews',
   'lfViews',
   'sfViews',
   'watchHours',

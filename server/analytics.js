@@ -30,6 +30,9 @@ const SUM_FIELDS = [
   'views',
   'lf_views',
   'sf_views',
+  'engaged_views',
+  'lf_engaged_views',
+  'sf_engaged_views',
   'watch_minutes',
   'lf_watch_minutes',
   'sf_watch_minutes',
@@ -86,8 +89,24 @@ function finalizeDay(day) {
   day.effectiveLow = day.revenue + (day.isEstimated ? day.estimatedLow : 0);
   day.effectiveHigh = day.revenue + (day.isEstimated ? day.estimatedHigh : 0);
   day.subs_net = (day.subs_gained || 0) - (day.subs_lost || 0);
-  day.rpm = day.views > 0 ? (day.effectiveRevenue / day.views) * 1000 : 0;
-  day.lf_rpm = day.lf_views > 0 ? (day.effectiveRevenue / day.lf_views) * 1000 : 0;
+
+  // RPM divides by ENGAGED views, because that is what YouTube monetises. Raw
+  // views include plays that never earned anything — for Shorts roughly half of
+  // them — so an RPM built on raw views understates what the content actually
+  // makes. Falls back to raw views for history synced before engaged views were
+  // collected.
+  const engaged = day.engaged_views > 0 ? day.engaged_views : day.views;
+  const lfEngaged = day.lf_engaged_views > 0 ? day.lf_engaged_views : day.lf_views;
+
+  day.effectiveEngagedViews = engaged;
+  day.rpm = engaged > 0 ? (day.effectiveRevenue / engaged) * 1000 : 0;
+  day.lf_rpm = lfEngaged > 0 ? (day.effectiveRevenue / lfEngaged) * 1000 : 0;
+  // RPM on the raw view count, kept so the two can be compared directly.
+  day.rpm_raw = day.views > 0 ? (day.effectiveRevenue / day.views) * 1000 : 0;
+  // What share of raw views actually counted as engaged.
+  day.engagedRate = day.views > 0 ? engaged / day.views : null;
+  day.sf_engagedRate =
+    day.sf_views > 0 ? (day.sf_engaged_views ?? day.sf_views) / day.sf_views : null;
   day.cpm =
     day.monetized_playbacks > 0 ? ((day.gross_revenue || 0) / day.monetized_playbacks) * 1000 : 0;
   day.avg_view_duration = day.views > 0 ? (day.watch_minutes * 60) / day.views : 0;
@@ -250,11 +269,15 @@ function channelBreakdown({ channels, series, previousSeries }) {
       reportedRevenue: current.revenue,
       estimatedRevenue: current.estimatedRevenue,
       views: current.views,
+      engagedViews: current.effectiveEngagedViews,
+      engagedRate: current.engagedRate,
       lfViews: current.lf_views,
       sfViews: current.sf_views,
+      sfEngagedViews: current.sf_engaged_views,
       watchHours: current.watch_hours,
       subsNet: current.subs_net,
       rpm: current.rpm,
+      rpmRaw: current.rpm_raw,
       cpm: current.cpm,
       dailyAverage: current.dailyAverage,
       previousRevenue: previous ? previous.effectiveRevenue : null,

@@ -205,6 +205,10 @@ addColumnIfMissing('live_daily', 'partial', 'INTEGER DEFAULT 0');
 addColumnIfMissing('videos', 'lifetime_views', 'INTEGER');
 addColumnIfMissing('videos', 'lifetime_likes', 'INTEGER');
 addColumnIfMissing('videos', 'lifetime_comments', 'INTEGER');
+// Engaged views — the view definition YouTube actually monetises against.
+addColumnIfMissing('daily_metrics', 'engaged_views', 'INTEGER');
+addColumnIfMissing('daily_metrics', 'lf_engaged_views', 'INTEGER');
+addColumnIfMissing('daily_metrics', 'sf_engaged_views', 'INTEGER');
 
 // ---------------------------------------------------------------------------
 // Channels
@@ -262,6 +266,9 @@ const DAILY_COLUMNS = [
   'views',
   'lf_views',
   'sf_views',
+  'engaged_views',
+  'lf_engaged_views',
+  'sf_engaged_views',
   'watch_minutes',
   'lf_watch_minutes',
   'sf_watch_minutes',

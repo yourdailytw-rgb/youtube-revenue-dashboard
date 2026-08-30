@@ -576,26 +576,20 @@ api.post('/token-refresh', async (req, res) => {
  */
 api.get('/admin/probe-metrics', async (req, res) => {
   const allTokens = tokens.loadTokens();
-  const entry = Object.entries(allTokens).find(([, t]) => !t.mock && t.tokens?.refresh_token);
+  const wanted = req.query.channel;
+  const entry = Object.entries(allTokens).find(
+    ([id, t]) => !t.mock && t.tokens?.refresh_token && (!wanted || id === wanted)
+  );
   if (!entry) return res.status(400).json({ error: 'No connected channel with a refresh token' });
 
   const [channelId, tokenData] = entry;
-  const days = Math.min(90, Math.max(1, Number(req.query.days) || 14));
-  const end = addDays(today(), -4); // safely inside reported data
+  const days = Math.min(1200, Math.max(1, Number(req.query.days) || 14));
+  const end = req.query.end && isValidISO(req.query.end) ? req.query.end : addDays(today(), -4);
   const start = addDays(end, -days);
 
   const candidates = (req.query.metrics
     ? String(req.query.metrics).split(',')
-    : [
-        'views',
-        'engagedViews',
-        'estimatedMinutesWatched',
-        'monetizedPlaybacks',
-        'adImpressions',
-        'estimatedRevenue',
-        'averageViewPercentage',
-        'creatorContentType',
-      ]
+    : ['views', 'engagedViews', 'monetizedPlaybacks', 'adImpressions', 'estimatedRevenue']
   ).map((m) => m.trim()).filter(Boolean);
 
   const client = oauth.clientForChannel(channelId, tokenData);
@@ -603,34 +597,38 @@ api.get('/admin/probe-metrics', async (req, res) => {
   const results = [];
 
   for (const metric of candidates) {
+    const params = {
+      ids: `channel==${channelId}`,
+      startDate: start,
+      endDate: end,
+      metrics: metric,
+    };
+    if (req.query.dimensions) params.dimensions = req.query.dimensions;
+    if (req.query.filters) params.filters = req.query.filters;
+    if (metric.toLowerCase().includes('revenue') || metric.toLowerCase().includes('cpm')) {
+      params.currency = config.CURRENCY;
+    }
+
     try {
-      const report = await analyticsApi.reports.query({
-        ids: `channel==${channelId}`,
-        startDate: start,
-        endDate: end,
-        metrics: metric,
-        dimensions: 'day',
-        sort: 'day',
-      });
+      const report = await analyticsApi.reports.query(params);
+      const headers = (report.data.columnHeaders || []).map((h) => h.name);
+      const valueIdx = headers.indexOf(metric);
       const rows = report.data.rows || [];
-      const total = rows.reduce((a, r) => a + (Number(r[1]) || 0), 0);
-      results.push({
-        metric,
-        supported: true,
-        rows: rows.length,
-        total,
-        sample: rows.slice(0, 3),
-      });
+      const total = rows.reduce((a, r) => a + (Number(r[valueIdx >= 0 ? valueIdx : r.length - 1]) || 0), 0);
+      results.push({ metric, supported: true, rows: rows.length, total, headers, sample: rows.slice(0, 4) });
     } catch (err) {
-      results.push({
-        metric,
-        supported: false,
-        error: (err?.message || String(err)).slice(0, 300),
-      });
+      results.push({ metric, supported: false, error: (err?.message || String(err)).replace(/\s+/g, ' ').slice(0, 260) });
     }
   }
 
-  res.json({ channelId, channelTitle: tokenData.channelTitle, range: { start, end }, results });
+  res.json({
+    channelId,
+    channelTitle: tokenData.channelTitle,
+    range: { start, end, days },
+    dimensions: req.query.dimensions || null,
+    filters: req.query.filters || null,
+    results,
+  });
 });
 
 /**

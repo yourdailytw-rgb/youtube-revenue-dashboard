@@ -74,11 +74,20 @@ function isTrainable(row) {
   );
 }
 
+/**
+ * Model inputs are ENGAGED views where we have them, because that is the view
+ * definition revenue is actually paid against. For Shorts the two differ by
+ * roughly half, so fitting on raw views would have the coefficient absorb the
+ * engagement rate — fine while that rate is stable, wrong the moment it moves.
+ * Falls back to raw views for history synced before engaged views existed.
+ */
 function lf(row) {
-  return (row.lf_views ?? 0) / 1000;
+  const v = row.lf_engaged_views ?? row.lf_views ?? 0;
+  return v / 1000;
 }
 function sf(row) {
-  return (row.sf_views ?? 0) / 1000;
+  const v = row.sf_engaged_views ?? row.sf_views ?? 0;
+  return v / 1000;
 }
 
 /**
@@ -396,7 +405,7 @@ function estimateChannel(history, options = {}) {
 
     // No views measured means nothing to model. Producing a 0 kr "estimate"
     // would read as a real figure and would be counted as a day with data.
-    const measuredViews = (row.lf_views ?? 0) + (row.sf_views ?? 0);
+    const measuredViews = (row.lf_engaged_views ?? row.lf_views ?? 0) + (row.sf_engaged_views ?? row.sf_views ?? 0);
     if (measuredViews <= 0) continue;
 
     const result = estimateForDate(sorted, row, opts);
