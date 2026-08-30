@@ -149,35 +149,65 @@ function recentSplitRatio(channelId, referenceDate) {
  * views, so including them would drag the rate down and understate the estimate.
  */
 function recentEngagedRates(channelId, referenceDate, opts = {}) {
-  const settleWindow = opts.settleWindowDays ?? 2;
-  const lookback = opts.lookbackDays ?? 35;
-  const settledThrough = addDays(referenceDate, -settleWindow);
-  const rows = db.getChannelDaily(channelId, addDays(settledThrough, -lookback), settledThrough);
+  const lookback = opts.lookbackDays ?? 21;
+  // Exclude only the single newest reported day, which may still be filling in.
+  const settledThrough = addDays(referenceDate, -1);
+  const rows = db
+    .getChannelDaily(channelId, addDays(settledThrough, -lookback), settledThrough)
+    .filter((r) => r.views_present === 1);
 
-  let lfViews = 0;
-  let lfEngaged = 0;
-  let sfViews = 0;
-  let sfEngaged = 0;
+  const clampRate = (v) => (Number.isFinite(v) && v > 0.05 && v <= 1.05 ? Math.min(1, v) : null);
 
-  for (const row of rows) {
-    if (row.views_present !== 1) continue;
-    if (row.lf_engaged_views != null) {
-      lfViews += row.lf_views ?? 0;
-      lfEngaged += row.lf_engaged_views ?? 0;
-    }
-    if (row.sf_engaged_views != null) {
-      sfViews += row.sf_views ?? 0;
-      sfEngaged += row.sf_engaged_views ?? 0;
+  const lfDays = rows
+    .filter((r) => (r.lf_views ?? 0) > 0 && r.lf_engaged_views != null)
+    .map((r) => ({ date: r.date, views: r.lf_views, engaged: r.lf_engaged_views, rate: r.lf_engaged_views / r.lf_views }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const sfDays = rows
+    .filter((r) => (r.sf_views ?? 0) > 0 && r.sf_engaged_views != null)
+    .map((r) => ({ views: r.sf_views, engaged: r.sf_engaged_views }));
+
+  /**
+   * Views-weighted rate over a set of days.
+   */
+  const weighted = (days) => {
+    const v = days.reduce((a, d) => a + d.views, 0);
+    const e = days.reduce((a, d) => a + d.engaged, 0);
+    return v > 0 ? clampRate(e / v) : null;
+  };
+
+  /**
+   * Detect a step change in how YouTube counts views.
+   *
+   * In late August 2026 the "views" metric was redefined to count from about a
+   * second, roughly doubling it, while "engaged views" kept the older meaning.
+   * A long trailing average would take weeks to notice, and until it did every
+   * live estimate would be inflated by the ratio between the two regimes — so
+   * the break is found explicitly and only days after it are used.
+   */
+  let lfUsable = lfDays;
+  let regimeBreak = null;
+
+  if (lfDays.length >= 3) {
+    const priorRates = lfDays.slice(0, -1).map((d) => d.rate).sort((a, b) => a - b);
+    const priorMedian = priorRates[Math.floor(priorRates.length / 2)];
+    const newest = lfDays[lfDays.length - 1];
+
+    if (priorMedian && newest.rate < priorMedian * 0.8) {
+      // Walk back over the contiguous run of days in the new, lower regime.
+      let i = lfDays.length - 1;
+      while (i > 0 && lfDays[i - 1].rate < priorMedian * 0.8) i--;
+      lfUsable = lfDays.slice(i);
+      regimeBreak = lfUsable[0].date;
     }
   }
 
-  // Default to 1 (no conversion) when there is nothing to learn from — better to
-  // leave the figure unchanged than to invent a correction.
-  const clampRate = (v) => (Number.isFinite(v) && v > 0.05 && v <= 1.05 ? Math.min(1, v) : 1);
   return {
-    lf: lfViews > 0 ? clampRate(lfEngaged / lfViews) : 1,
-    sf: sfViews > 0 ? clampRate(sfEngaged / sfViews) : 1,
-    samples: { lfViews, sfViews },
+    lf: weighted(lfUsable) ?? 1,
+    sf: weighted(sfDays) ?? 1,
+    regimeBreak,
+    lfDaysUsed: lfUsable.length,
+    samples: { lfViews: lfUsable.reduce((a, d) => a + d.views, 0) },
   };
 }
 
@@ -646,6 +676,17 @@ function liveStatus() {
         elapsedHours: r.elapsed_hours,
       })),
       calibration: calibrationFactor(channel.id),
+      engagedRates: (() => {
+        const edge = db.lastViewsDate(channel.id);
+        if (!edge) return null;
+        const r = recentEngagedRates(channel.id, edge);
+        return {
+          longform: r.lf,
+          shorts: r.sf,
+          regimeBreak: r.regimeBreak,
+          daysUsed: r.lfDaysUsed,
+        };
+      })(),
       accuracySamples: accuracy.length,
       medianAbsError: errors.length ? median(errors) : null,
       recent: accuracy.slice(0, 10),

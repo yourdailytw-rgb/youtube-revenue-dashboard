@@ -107,11 +107,31 @@ export function QuickStats({ data }) {
 
   const items = [
     {
-      label: last?.livePartial
-        ? 'Today so far (est.)'
-        : last?.isEstimated
-          ? 'Latest day (estimated)'
-          : 'Latest day',
+      // Money YouTube has actually reported. No modelling in this number.
+      label: 'Confirmed revenue',
+      value: formatMoney(summary.revenue),
+      hint: estimation?.lastRevenueDate
+        ? `reported through ${formatDate(estimation.lastRevenueDate, 'short')}`
+        : 'reported by YouTube',
+      tone: 'pos',
+    },
+    {
+      // Modelled fill for the days YouTube has not reported yet.
+      label: 'Estimated on top',
+      value: summary.estimatedRevenue > 0 ? `+ ${formatMoney(summary.estimatedRevenue)}` : '—',
+      hint:
+        summary.estimatedDays > 0
+          ? `${summary.estimatedDays} day${summary.estimatedDays === 1 ? '' : 's'} modelled`
+          : 'nothing pending',
+      tone: summary.estimatedRevenue > 0 ? 'est' : undefined,
+    },
+    {
+      label: 'Total (incl. estimate)',
+      value: formatMoney(summary.effectiveRevenue),
+      hint: `${summary.daysComplete ?? summary.days} complete days`,
+    },
+    {
+      label: last?.livePartial ? 'Today so far (est.)' : 'Latest day',
       value: formatMoney(last?.effectiveRevenue ?? 0),
       hint: last
         ? last.livePartial && last.liveCoveredHours
@@ -121,39 +141,15 @@ export function QuickStats({ data }) {
       tone: last?.isEstimated ? 'est' : undefined,
     },
     {
-      label: prev?.isEstimated ? 'Yesterday (est.)' : 'Day before',
-      value: formatMoney(prev?.effectiveRevenue ?? 0),
-      hint: prev ? formatDate(prev.date, 'short') : '—',
-      tone: prev?.isEstimated ? 'est' : undefined,
-    },
-    {
       label: 'Daily average',
       value: formatMoney(summary.dailyAverage),
       hint: `over ${summary.daysComplete ?? summary.daysWithData ?? summary.days} complete days`,
-    },
-    {
-      label: 'Best day',
-      value: formatMoney(best?.effectiveRevenue ?? 0),
-      hint: best ? formatDate(best.date, 'short') : '—',
     },
     {
       label: 'Projected this month',
       value: forecast ? formatMoney(forecast.projectedRevenue, { decimals: 0 }) : '—',
       hint: forecast ? `${forecast.daysRemaining} days left` : '—',
     },
-    awaiting > 0
-      ? {
-          label: 'Awaiting YouTube',
-          value: `${awaiting} day${awaiting === 1 ? '' : 's'}`,
-          hint: 'not reported yet — not zero',
-          tone: 'est',
-        }
-      : {
-          label: 'Estimator accuracy',
-          value: accuracy !== null && accuracy !== undefined ? `±${(accuracy * 100).toFixed(1)}%` : '—',
-          hint: 'median back-test error',
-          tone: accuracy !== null && accuracy < 0.1 ? 'pos' : undefined,
-        },
   ];
 
   return (

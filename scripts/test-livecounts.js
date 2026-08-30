@@ -304,6 +304,38 @@ test('an inflated raw count does not inflate the estimate', () => {
   );
 });
 
+test('detects a view-definition regime change and uses the new rate', () => {
+  reset();
+  // The real August 2026 shape: ~99% engaged until 26 Aug, ~55% from 27 Aug,
+  // with raw views nearly doubling at the break.
+  const EDGE = '2026-08-29';
+  for (let i = 25; i >= 0; i--) {
+    const date = addDays(EDGE, -i);
+    const newRegime = date >= '2026-08-27';
+    const lfViews = newRegime ? 140000 : 75000;
+    const lfEngaged = Math.round(lfViews * (newRegime ? 0.552 : 0.992));
+    db.upsertDaily(CHANNEL, date, {
+      revenue: 2800,
+      views: lfViews,
+      lf_views: lfViews,
+      sf_views: 0,
+      lf_engaged_views: lfEngaged,
+      sf_engaged_views: 0,
+      engaged_views: lfEngaged,
+      revenue_present: 1,
+      views_present: 1,
+      views_source: 'analytics',
+    });
+  }
+
+  const rates = livecounts.recentEngagedRates(CHANNEL, EDGE);
+  assert.strictEqual(rates.regimeBreak, '2026-08-27', `break was ${rates.regimeBreak}`);
+  assert.ok(
+    Math.abs(rates.lf - 0.552) < 0.02,
+    `rate was ${(rates.lf * 100).toFixed(1)}%, expected ~55.2% — a stale trailing average would give ~90%+`
+  );
+});
+
 console.log(`\n${passed} check(s) passed\n`);
 
 // Clean up the scratch database.
