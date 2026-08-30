@@ -640,6 +640,61 @@ api.get('/admin/probe-metrics', async (req, res) => {
  *
  *   GET /api/admin/engaged-gap?days=28
  */
+/**
+ * Raw day-by-day rows for an arbitrary metric set, so a change in how YouTube
+ * counts something can be located to the exact date it happened.
+ *
+ *   GET /api/admin/daily-raw?metrics=views,engagedViews&filters=creatorContentType==videoOnDemand&days=30
+ */
+api.get('/admin/daily-raw', async (req, res) => {
+  const allTokens = tokens.loadTokens();
+  const wanted = req.query.channel;
+  const entries = Object.entries(allTokens).filter(
+    ([id, t]) => !t.mock && t.tokens?.refresh_token && (!wanted || id === wanted)
+  );
+  if (!entries.length) return res.status(400).json({ error: 'No connected channel available' });
+
+  const days = Math.min(400, Math.max(1, Number(req.query.days) || 30));
+  const end = req.query.end && isValidISO(req.query.end) ? req.query.end : addDays(today(), -1);
+  const start = addDays(end, -days);
+  const metrics = (req.query.metrics || 'views,engagedViews').split(',').map((m) => m.trim());
+
+  const { google } = require('googleapis');
+  const out = [];
+
+  for (const [channelId, tokenData] of entries) {
+    const client = oauth.clientForChannel(channelId, tokenData);
+    const analyticsApi = google.youtubeAnalytics({ version: 'v2', auth: client });
+    const params = {
+      ids: `channel==${channelId}`,
+      startDate: start,
+      endDate: end,
+      metrics: metrics.join(','),
+      dimensions: 'day',
+      sort: 'day',
+    };
+    if (req.query.filters) params.filters = req.query.filters;
+
+    try {
+      const report = await analyticsApi.reports.query(params);
+      out.push({
+        channelId,
+        channelTitle: tokenData.channelTitle,
+        headers: (report.data.columnHeaders || []).map((h) => h.name),
+        rows: report.data.rows || [],
+      });
+    } catch (err) {
+      out.push({
+        channelId,
+        channelTitle: tokenData.channelTitle,
+        error: (err?.message || String(err)).replace(/\s+/g, ' ').slice(0, 260),
+      });
+    }
+  }
+
+  res.json({ range: { start, end, days }, metrics, filters: req.query.filters || null, channels: out });
+});
+
 api.get('/admin/engaged-gap', async (req, res) => {
   const days = Math.min(365, Math.max(7, Number(req.query.days) || 28));
   const end = addDays(today(), -4);
