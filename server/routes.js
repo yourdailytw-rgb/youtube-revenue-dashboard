@@ -633,6 +633,75 @@ api.get('/admin/probe-metrics', async (req, res) => {
   res.json({ channelId, channelTitle: tokenData.channelTitle, range: { start, end }, results });
 });
 
+/**
+ * views vs engagedViews, per channel and per content type.
+ *
+ * YouTube pays against engaged views, not raw views, so any RPM computed on raw
+ * views is understated by however much the two diverge. This measures that gap
+ * on real data instead of assuming it.
+ *
+ *   GET /api/admin/engaged-gap?days=28
+ */
+api.get('/admin/engaged-gap', async (req, res) => {
+  const days = Math.min(365, Math.max(7, Number(req.query.days) || 28));
+  const end = addDays(today(), -4);
+  const start = addDays(end, -days);
+  const allTokens = tokens.loadTokens();
+  const out = [];
+
+  const { google } = require('googleapis');
+
+  for (const [channelId, tokenData] of Object.entries(allTokens)) {
+    if (tokenData.mock || !tokenData.tokens?.refresh_token) continue;
+    const client = oauth.clientForChannel(channelId, tokenData);
+    const analyticsApi = google.youtubeAnalytics({ version: 'v2', auth: client });
+    const entry = { channelId, channelTitle: tokenData.channelTitle };
+
+    // Totals
+    try {
+      const r = await analyticsApi.reports.query({
+        ids: `channel==${channelId}`,
+        startDate: start,
+        endDate: end,
+        metrics: 'views,engagedViews,estimatedRevenue',
+        currency: config.CURRENCY,
+      });
+      const row = (r.data.rows || [])[0] || [];
+      entry.views = Number(row[0]) || 0;
+      entry.engagedViews = Number(row[1]) || 0;
+      entry.revenue = Number(row[2]) || 0;
+      entry.engagedRatio = entry.views ? entry.engagedViews / entry.views : null;
+      entry.rpmOnViews = entry.views ? (entry.revenue / entry.views) * 1000 : null;
+      entry.rpmOnEngaged = entry.engagedViews ? (entry.revenue / entry.engagedViews) * 1000 : null;
+    } catch (err) {
+      entry.error = (err?.message || String(err)).slice(0, 200);
+    }
+
+    // Split by content type
+    try {
+      const r = await analyticsApi.reports.query({
+        ids: `channel==${channelId}`,
+        startDate: start,
+        endDate: end,
+        metrics: 'views,engagedViews',
+        dimensions: 'creatorContentType',
+      });
+      entry.byContentType = (r.data.rows || []).map((row) => ({
+        contentType: row[0],
+        views: Number(row[1]) || 0,
+        engagedViews: Number(row[2]) || 0,
+        ratio: Number(row[1]) ? Number(row[2]) / Number(row[1]) : null,
+      }));
+    } catch (err) {
+      entry.contentTypeError = (err?.message || String(err)).slice(0, 200);
+    }
+
+    out.push(entry);
+  }
+
+  res.json({ range: { start, end, days }, channels: out });
+});
+
 api.get('/admin/storage-status', (req, res) => {
   res.json({ tokens: tokenStorageStatus(), db: db.stats(), dataDir: config.DATA_DIR });
 });
