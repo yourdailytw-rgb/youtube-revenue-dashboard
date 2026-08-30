@@ -200,6 +200,14 @@ addColumnIfMissing('daily_metrics', 'views_source', "TEXT DEFAULT 'analytics'");
 addColumnIfMissing('live_daily', 'covered_hours', 'REAL');
 addColumnIfMissing('live_daily', 'elapsed_hours', 'REAL');
 addColumnIfMissing('live_daily', 'partial', 'INTEGER DEFAULT 0');
+// Live counters are RAW views (the public counter counts every play). The
+// estimator is fitted on ENGAGED views, so the raw figure is converted with the
+// channel's recent engaged rate and both are stored.
+addColumnIfMissing('live_daily', 'engaged_views', 'INTEGER');
+addColumnIfMissing('live_daily', 'lf_engaged_views', 'INTEGER');
+addColumnIfMissing('live_daily', 'sf_engaged_views', 'INTEGER');
+addColumnIfMissing('live_daily', 'lf_engaged_rate', 'REAL');
+addColumnIfMissing('live_daily', 'sf_engaged_rate', 'REAL');
 // Lifetime counters on the video row, so popular back-catalogue videos can be
 // tracked for spikes — not just recent uploads.
 addColumnIfMissing('videos', 'lifetime_views', 'INTEGER');
@@ -698,14 +706,21 @@ function upsertLiveDaily(row) {
   db.prepare(
     `INSERT INTO live_daily (channel_id, date, views, lf_views, sf_views, complete, split_ratio,
                              first_snapshot, last_snapshot, covered_hours, elapsed_hours, partial,
-                             computed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             engaged_views, lf_engaged_views, sf_engaged_views,
+                             lf_engaged_rate, sf_engaged_rate, computed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(channel_id, date) DO UPDATE SET
        views = excluded.views, lf_views = excluded.lf_views, sf_views = excluded.sf_views,
        complete = excluded.complete, split_ratio = excluded.split_ratio,
        first_snapshot = excluded.first_snapshot, last_snapshot = excluded.last_snapshot,
        covered_hours = excluded.covered_hours, elapsed_hours = excluded.elapsed_hours,
-       partial = excluded.partial, computed_at = excluded.computed_at`
+       partial = excluded.partial,
+       engaged_views = excluded.engaged_views,
+       lf_engaged_views = excluded.lf_engaged_views,
+       sf_engaged_views = excluded.sf_engaged_views,
+       lf_engaged_rate = excluded.lf_engaged_rate,
+       sf_engaged_rate = excluded.sf_engaged_rate,
+       computed_at = excluded.computed_at`
   ).run(
     row.channelId,
     row.date,
@@ -719,6 +734,11 @@ function upsertLiveDaily(row) {
     row.coveredHours ?? null,
     row.elapsedHours ?? null,
     row.partial ? 1 : 0,
+    row.engagedViews ?? null,
+    row.lfEngagedViews ?? null,
+    row.sfEngagedViews ?? null,
+    row.lfEngagedRate ?? null,
+    row.sfEngagedRate ?? null,
     new Date().toISOString()
   );
 }

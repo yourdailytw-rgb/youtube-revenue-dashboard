@@ -217,6 +217,93 @@ test('the estimator produces an estimate once live views exist', () => {
   assert.ok(est.revenue > 900 && est.revenue < 1500, `estimate was ${est.revenue}`);
 });
 
+test('converts raw live views to ENGAGED views before the estimator sees them', () => {
+  reset();
+  // History where Shorts engage at 50% and long-form at 100% — the real shape.
+  for (let i = 39; i >= 0; i--) {
+    const date = addDays(LAST_ANALYTICS, -i);
+    db.upsertDaily(CHANNEL, date, {
+      revenue: 1000,
+      views: 200000,
+      lf_views: 100000,
+      sf_views: 100000,
+      lf_engaged_views: 100000, // 100%
+      sf_engaged_views: 50000, //  50%
+      revenue_present: 1,
+      views_present: 1,
+      views_source: 'analytics',
+    });
+  }
+
+  const rates = livecounts.recentEngagedRates(CHANNEL, LAST_ANALYTICS);
+  assert.ok(Math.abs(rates.lf - 1.0) < 0.01, `lf rate was ${rates.lf}`);
+  assert.ok(Math.abs(rates.sf - 0.5) < 0.01, `sf rate was ${rates.sf}`);
+
+  snapshot('2026-08-14', 23, 10_000_000);
+  snapshot('2026-08-15', 23, 10_200_000); // 200k raw views
+  livecounts.deriveForChannel(CHANNEL);
+
+  const [live] = db.getChannelLiveDaily(CHANNEL).filter((r) => r.date === '2026-08-15');
+  assert.ok(live, 'expected a live day');
+
+  // Raw split is 50/50, so engaged should be 100k long-form + 50k Shorts.
+  assert.ok(Math.abs(live.lf_engaged_views - 100000) < 2000, `lf engaged ${live.lf_engaged_views}`);
+  assert.ok(Math.abs(live.sf_engaged_views - 50000) < 2000, `sf engaged ${live.sf_engaged_views}`);
+  assert.ok(
+    live.sf_engaged_views < live.sf_views,
+    'Shorts engaged views must be below raw views'
+  );
+
+  // And the estimator must receive the engaged figures, not the raw ones.
+  const merged = livecounts.mergeLiveIntoHistory(
+    CHANNEL,
+    db.getChannelDaily(CHANNEL, '2026-06-01', '2026-08-20')
+  );
+  const row = merged.find((r) => r.date === '2026-08-15');
+  assert.strictEqual(row.sf_engaged_views, live.sf_engaged_views);
+  assert.ok(
+    row.sf_engaged_views < row.sf_views,
+    'merged history must carry engaged views distinct from raw'
+  );
+});
+
+test('an inflated raw count does not inflate the estimate', () => {
+  reset();
+  // Revenue comes only from long-form; Shorts are pure padding at 50% engaged.
+  for (let i = 39; i >= 0; i--) {
+    const date = addDays(LAST_ANALYTICS, -i);
+    db.upsertDaily(CHANNEL, date, {
+      revenue: 1000, // 100k long-form engaged @ 10 kr/1000
+      views: 300000,
+      lf_views: 100000,
+      sf_views: 200000,
+      lf_engaged_views: 100000,
+      sf_engaged_views: 100000,
+      revenue_present: 1,
+      views_present: 1,
+      views_source: 'analytics',
+    });
+  }
+  snapshot('2026-08-14', 23, 10_000_000);
+  snapshot('2026-08-15', 23, 10_300_000); // same 300k raw shape as history
+  livecounts.deriveForChannel(CHANNEL);
+
+  const { estimateChannel } = require('../server/estimator');
+  const merged = livecounts.mergeLiveIntoHistory(
+    CHANNEL,
+    db.getChannelDaily(CHANNEL, '2026-06-01', '2026-08-20')
+  );
+  const result = estimateChannel(merged);
+  const est = result.estimates.find((e) => e.date === '2026-08-15');
+  assert.ok(est, 'expected an estimate');
+  // A day identical in shape to history must estimate close to history's 1000 kr.
+  // Feeding raw views to an engaged-fitted model would have produced ~1500.
+  assert.ok(
+    est.revenue > 800 && est.revenue < 1250,
+    `estimate was ${est.revenue}, expected ~1000 (raw-view leakage would give ~1500)`
+  );
+});
+
 console.log(`\n${passed} check(s) passed\n`);
 
 // Clean up the scratch database.

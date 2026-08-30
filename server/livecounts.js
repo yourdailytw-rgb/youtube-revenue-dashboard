@@ -136,6 +136,52 @@ function recentSplitRatio(channelId, referenceDate) {
 }
 
 /**
+ * The share of raw views that counted as ENGAGED, per content type, learned from
+ * recent SETTLED Analytics days.
+ *
+ * This is the conversion the estimator depends on. The live counters are RAW
+ * views — the public counter counts every play — while the RPM model is fitted
+ * on engaged views. Feeding raw views into a model calibrated on engaged views
+ * overstates revenue by exactly 1/rate: harmless while long-form sits at 100%,
+ * but roughly double for Shorts.
+ *
+ * The newest days are excluded because engagedViews settles more slowly than
+ * views, so including them would drag the rate down and understate the estimate.
+ */
+function recentEngagedRates(channelId, referenceDate, opts = {}) {
+  const settleWindow = opts.settleWindowDays ?? 2;
+  const lookback = opts.lookbackDays ?? 35;
+  const settledThrough = addDays(referenceDate, -settleWindow);
+  const rows = db.getChannelDaily(channelId, addDays(settledThrough, -lookback), settledThrough);
+
+  let lfViews = 0;
+  let lfEngaged = 0;
+  let sfViews = 0;
+  let sfEngaged = 0;
+
+  for (const row of rows) {
+    if (row.views_present !== 1) continue;
+    if (row.lf_engaged_views != null) {
+      lfViews += row.lf_views ?? 0;
+      lfEngaged += row.lf_engaged_views ?? 0;
+    }
+    if (row.sf_engaged_views != null) {
+      sfViews += row.sf_views ?? 0;
+      sfEngaged += row.sf_engaged_views ?? 0;
+    }
+  }
+
+  // Default to 1 (no conversion) when there is nothing to learn from — better to
+  // leave the figure unchanged than to invent a correction.
+  const clampRate = (v) => (Number.isFinite(v) && v > 0.05 && v <= 1.05 ? Math.min(1, v) : 1);
+  return {
+    lf: lfViews > 0 ? clampRate(lfEngaged / lfViews) : 1,
+    sf: sfViews > 0 ? clampRate(sfEngaged / sfViews) : 1,
+    samples: { lfViews, sfViews },
+  };
+}
+
+/**
  * Per-day view counts derived by summing PER-VIDEO counter deltas.
  *
  * This is the primary source, and it exists because the channel-level counter
@@ -253,12 +299,17 @@ function deriveForChannel(channelId) {
   const videoDays = deriveFromVideoSnapshots(channelId, lastAnalytics);
   const { factor, calibrated, samples } = calibrationFactor(channelId);
   const ratio = recentSplitRatio(channelId, lastAnalytics);
+  const engagedRates = recentEngagedRates(channelId, lastAnalytics);
 
   for (const [date, bucket] of videoDays) {
     if (bucket.views <= 0) continue;
 
     const views = Math.round(bucket.views * factor);
     const lfViews = Math.round(views * ratio);
+    const sfViews = views - lfViews;
+    // Convert RAW live views to ENGAGED views, which is what the model expects.
+    const lfEngagedViews = Math.round(lfViews * engagedRates.lf);
+    const sfEngagedViews = Math.round(sfViews * engagedRates.sf);
     const isToday = date === todayPT;
     const coveredHours =
       (new Date(bucket.lastSnapshot) - new Date(bucket.firstSnapshot)) / 3600000;
@@ -268,7 +319,12 @@ function deriveForChannel(channelId) {
       date,
       views,
       lfViews,
-      sfViews: views - lfViews,
+      sfViews,
+      engagedViews: lfEngagedViews + sfEngagedViews,
+      lfEngagedViews,
+      sfEngagedViews,
+      lfEngagedRate: engagedRates.lf,
+      sfEngagedRate: engagedRates.sf,
       complete: !bucket.partial && !isToday,
       partial: bucket.partial || isToday,
       coveredHours,
@@ -330,13 +386,21 @@ function deriveForChannel(channelId) {
       : 24;
 
     const lfViews = Math.round(views * ratio);
+    const sfViewsFallback = views - lfViews;
+    const lfEngagedFallback = Math.round(lfViews * engagedRates.lf);
+    const sfEngagedFallback = Math.round(sfViewsFallback * engagedRates.sf);
 
     derived.push({
       channelId,
       date,
       views,
       lfViews,
-      sfViews: views - lfViews,
+      sfViews: sfViewsFallback,
+      engagedViews: lfEngagedFallback + sfEngagedFallback,
+      lfEngagedViews: lfEngagedFallback,
+      sfEngagedViews: sfEngagedFallback,
+      lfEngagedRate: engagedRates.lf,
+      sfEngagedRate: engagedRates.sf,
       complete,
       partial: partial || isToday,
       coveredHours,
@@ -545,6 +609,11 @@ function mergeLiveIntoHistory(channelId, history) {
       views: live.views,
       lf_views: live.lf_views,
       sf_views: live.sf_views,
+      // The estimator reads these first — they are the engaged equivalents of
+      // the raw live counters, which is the basis the RPM model was fitted on.
+      engaged_views: live.engaged_views ?? live.views,
+      lf_engaged_views: live.lf_engaged_views ?? live.lf_views,
+      sf_engaged_views: live.sf_engaged_views ?? live.sf_views,
       views_present: 1,
       views_source: 'live',
       revenue_present: existing?.revenue_present ?? 0,
@@ -606,5 +675,6 @@ module.exports = {
   refreshLiveCounts,
   mergeLiveIntoHistory,
   recentSplitRatio,
+  recentEngagedRates,
   liveStatus,
 };
