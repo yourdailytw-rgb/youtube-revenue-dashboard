@@ -211,6 +211,14 @@ function recentEngagedRates(channelId, referenceDate, opts = {}) {
     sf: weighted(sfDays) ?? 1,
     regimeBreak,
     lfDaysUsed: lfUsable.length,
+    // The days the rate was actually computed from, so a wrong rate can be
+    // traced to its inputs instead of guessed at.
+    inspect: lfDays.slice(-6).map((d) => ({
+      date: d.date,
+      views: d.views,
+      engaged: d.engaged,
+      rate: Number(d.rate.toFixed(4)),
+    })),
     samples: { lfViews: lfUsable.reduce((a, d) => a + d.views, 0) },
   };
 }
@@ -689,6 +697,8 @@ function liveStatus() {
           shorts: r.sf,
           regimeBreak: r.regimeBreak,
           daysUsed: r.lfDaysUsed,
+          referenceDate: edge,
+          inspect: r.inspect,
         };
       })(),
       accuracySamples: accuracy.length,
