@@ -308,11 +308,13 @@ test('detects a view-definition regime change and uses the new rate', () => {
   reset();
   // The real August 2026 shape: ~99% engaged until 26 Aug, ~55% from 27 Aug,
   // with raw views nearly doubling at the break.
-  const EDGE = '2026-08-29';
+  // The edge is the newest day Analytics has reported — which is itself the
+  // day carrying the change, so it must not be excluded from the rate window.
+  const EDGE = '2026-08-27';
   for (let i = 25; i >= 0; i--) {
     const date = addDays(EDGE, -i);
     const newRegime = date >= '2026-08-27';
-    const lfViews = newRegime ? 140000 : 75000;
+    const lfViews = newRegime ? 139504 : 75000;
     const lfEngaged = Math.round(lfViews * (newRegime ? 0.552 : 0.992));
     db.upsertDaily(CHANNEL, date, {
       revenue: 2800,

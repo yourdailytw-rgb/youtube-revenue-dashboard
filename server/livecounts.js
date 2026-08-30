@@ -150,8 +150,12 @@ function recentSplitRatio(channelId, referenceDate) {
  */
 function recentEngagedRates(channelId, referenceDate, opts = {}) {
   const lookback = opts.lookbackDays ?? 21;
-  // Exclude only the single newest reported day, which may still be filling in.
-  const settledThrough = addDays(referenceDate, -1);
+  // referenceDate is the newest day Analytics has REPORTED, and Analytics only
+  // publishes days that are already two to three days old — so it is settled by
+  // construction. Excluding it here previously skipped the single day that
+  // carried the view-definition change, leaving the rate stuck on the old
+  // regime and inflating every live estimate.
+  const settledThrough = referenceDate;
   const rows = db
     .getChannelDaily(channelId, addDays(settledThrough, -lookback), settledThrough)
     .filter((r) => r.views_present === 1);

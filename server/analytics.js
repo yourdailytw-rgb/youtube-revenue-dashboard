@@ -176,6 +176,11 @@ function buildSeries({ channelIds, start, end, includeEstimates = true, includeL
       day.views += live.views || 0;
       day.lf_views += live.lf_views || 0;
       day.sf_views += live.sf_views || 0;
+      // Engaged equivalents too, otherwise a live day reports zero engaged
+      // views and its RPM collapses to the raw-view figure.
+      day.engaged_views += live.engaged_views ?? live.views ?? 0;
+      day.lf_engaged_views += live.lf_engaged_views ?? live.lf_views ?? 0;
+      day.sf_engaged_views += live.sf_engaged_views ?? live.sf_views ?? 0;
       day.hasViews = true;
       day.viewsAreLive = true;
       day.liveComplete = live.complete === 1;
