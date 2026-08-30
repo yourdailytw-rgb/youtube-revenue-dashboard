@@ -95,8 +95,19 @@ function finalizeDay(day) {
   // them — so an RPM built on raw views understates what the content actually
   // makes. Falls back to raw views for history synced before engaged views were
   // collected.
-  const engaged = day.engaged_views > 0 ? day.engaged_views : day.views;
-  const lfEngaged = day.lf_engaged_views > 0 ? day.lf_engaged_views : day.lf_views;
+  // GUARD: engagedViews settles more slowly than views, so the newest day can
+  // briefly report only ~55% of its eventual engaged count. Long-form settles to
+  // ~100%, so a large long-form shortfall means the day is not settled yet —
+  // using it would inflate that day's RPM roughly twofold. Shorts legitimately
+  // sit near 50%, which is why the test looks only at long-form.
+  const lfRate = day.lf_views > 0 ? (day.lf_engaged_views ?? 0) / day.lf_views : 1;
+  const engagedUnsettled = day.lf_views > 0 && day.lf_engaged_views > 0 && lfRate < 0.95;
+  day.engagedUnsettled = engagedUnsettled;
+
+  const engaged =
+    !engagedUnsettled && day.engaged_views > 0 ? day.engaged_views : day.views;
+  const lfEngaged =
+    !engagedUnsettled && day.lf_engaged_views > 0 ? day.lf_engaged_views : day.lf_views;
 
   day.effectiveEngagedViews = engaged;
   day.rpm = engaged > 0 ? (day.effectiveRevenue / engaged) * 1000 : 0;

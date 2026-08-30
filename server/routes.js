@@ -695,6 +695,42 @@ api.get('/admin/daily-raw', async (req, res) => {
   res.json({ range: { start, end, days }, metrics, filters: req.query.filters || null, channels: out });
 });
 
+/** How views vs engagedViews have converged for each recent day. */
+api.get('/admin/engaged-settling', (req, res) => {
+  const since = addDays(today(), -Math.min(45, Math.max(3, Number(req.query.days) || 14)));
+  const rows = db.engagedSettling(since);
+  const channels = new Map(db.listChannels().map((c) => [c.id, c.custom_name || c.title]));
+
+  const byKey = new Map();
+  for (const r of rows) {
+    const key = `${r.channel_id}:${r.date}`;
+    if (!byKey.has(key)) {
+      byKey.set(key, {
+        channelId: r.channel_id,
+        channelTitle: channels.get(r.channel_id) || r.channel_id,
+        date: r.date,
+        observations: [],
+      });
+    }
+    byKey.get(key).observations.push({
+      observedAt: r.observed_at,
+      views: r.views,
+      engagedViews: r.engaged_views,
+      ratio: r.views > 0 && r.engaged_views != null ? r.engaged_views / r.views : null,
+    });
+  }
+
+  const days = [...byKey.values()].sort((a, b) => b.date.localeCompare(a.date));
+  for (const d of days) {
+    const first = d.observations[0];
+    const last = d.observations[d.observations.length - 1];
+    d.firstRatio = first?.ratio ?? null;
+    d.latestRatio = last?.ratio ?? null;
+    d.settled = d.latestRatio != null && d.latestRatio >= 0.95;
+  }
+  res.json({ since, days });
+});
+
 api.get('/admin/engaged-gap', async (req, res) => {
   const days = Math.min(365, Math.max(7, Number(req.query.days) || 28));
   const end = addDays(today(), -4);

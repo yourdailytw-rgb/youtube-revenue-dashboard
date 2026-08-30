@@ -210,6 +210,21 @@ addColumnIfMissing('daily_metrics', 'engaged_views', 'INTEGER');
 addColumnIfMissing('daily_metrics', 'lf_engaged_views', 'INTEGER');
 addColumnIfMissing('daily_metrics', 'sf_engaged_views', 'INTEGER');
 
+// Repeated observations of the same day's views/engagedViews over time.
+// YouTube settles these two metrics at different speeds, so the newest day can
+// briefly look as though half its views stopped being engaged. Recording each
+// observation makes that settle-curve visible instead of alarming.
+db.exec(`
+CREATE TABLE IF NOT EXISTS engaged_observations (
+  channel_id    TEXT NOT NULL,
+  date          TEXT NOT NULL,
+  observed_at   TEXT NOT NULL,
+  views         INTEGER,
+  engaged_views INTEGER,
+  PRIMARY KEY (channel_id, date, observed_at)
+);
+`);
+
 // ---------------------------------------------------------------------------
 // Channels
 // ---------------------------------------------------------------------------
@@ -605,6 +620,33 @@ function getAllVideos() {
   return db.prepare('SELECT * FROM videos').all();
 }
 
+function recordEngagedObservation({ channelId, date, views, engagedViews }) {
+  // One row per hour is plenty to see a settle curve.
+  const observedAt = new Date().toISOString().slice(0, 13) + ':00:00Z';
+  db.prepare(
+    `INSERT INTO engaged_observations (channel_id, date, observed_at, views, engaged_views)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(channel_id, date, observed_at) DO UPDATE SET
+       views = excluded.views, engaged_views = excluded.engaged_views`
+  ).run(channelId, date, observedAt, views ?? null, engagedViews ?? null);
+}
+
+/** How a day's engaged ratio has evolved across observations. */
+function engagedSettling(sinceDate) {
+  return db
+    .prepare(
+      `SELECT channel_id, date, observed_at, views, engaged_views
+       FROM engaged_observations
+       WHERE date >= ?
+       ORDER BY date DESC, observed_at`
+    )
+    .all(sinceDate);
+}
+
+function pruneEngagedObservations(beforeDate) {
+  db.prepare('DELETE FROM engaged_observations WHERE date < ?').run(beforeDate);
+}
+
 function getCache(key, maxAgeMs) {
   const row = db.prepare('SELECT * FROM video_stats_cache WHERE cache_key = ?').get(key);
   if (!row) return null;
@@ -786,6 +828,9 @@ module.exports = {
   getAllVideos,
   videoVelocityWindows,
   getChannelVideoSnapshots,
+  recordEngagedObservation,
+  engagedSettling,
+  pruneEngagedObservations,
   getCache,
   setCache,
   clearCache,

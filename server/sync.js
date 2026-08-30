@@ -55,6 +55,21 @@ async function syncChannel(channelId, tokenData, { full = false } = {}) {
   }
   if (rows.length) db.upsertDailyBatch(rows);
 
+  // Track how views vs engagedViews settle for recent days. The two converge
+  // over a couple of days, and without this the newest day looks alarming.
+  const settleFrom = addDays(end, -8);
+  for (const row of rows) {
+    if (row.date < settleFrom) continue;
+    if (row.values.views == null) continue;
+    db.recordEngagedObservation({
+      channelId,
+      date: row.date,
+      views: row.values.views,
+      engagedViews: row.values.engaged_views,
+    });
+  }
+  db.pruneEngagedObservations(addDays(end, -45));
+
   db.upsertChannel({
     id: channelId,
     title: tokenData.channelTitle,
