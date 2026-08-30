@@ -565,6 +565,74 @@ api.post('/token-refresh', async (req, res) => {
   res.json(result);
 });
 
+/**
+ * Metric availability probe.
+ *
+ * YouTube adds metrics to Studio (Advanced mode) before — or sometimes without
+ * — exposing them on the Analytics API. Rather than guess which names work,
+ * this asks the API directly, one metric at a time, and reports what it says.
+ *
+ *   GET /api/admin/probe-metrics?metrics=engagedViews,views&days=14
+ */
+api.get('/admin/probe-metrics', async (req, res) => {
+  const allTokens = tokens.loadTokens();
+  const entry = Object.entries(allTokens).find(([, t]) => !t.mock && t.tokens?.refresh_token);
+  if (!entry) return res.status(400).json({ error: 'No connected channel with a refresh token' });
+
+  const [channelId, tokenData] = entry;
+  const days = Math.min(90, Math.max(1, Number(req.query.days) || 14));
+  const end = addDays(today(), -4); // safely inside reported data
+  const start = addDays(end, -days);
+
+  const candidates = (req.query.metrics
+    ? String(req.query.metrics).split(',')
+    : [
+        'views',
+        'engagedViews',
+        'estimatedMinutesWatched',
+        'monetizedPlaybacks',
+        'adImpressions',
+        'estimatedRevenue',
+        'averageViewPercentage',
+        'creatorContentType',
+      ]
+  ).map((m) => m.trim()).filter(Boolean);
+
+  const client = oauth.clientForChannel(channelId, tokenData);
+  const analyticsApi = require('googleapis').google.youtubeAnalytics({ version: 'v2', auth: client });
+  const results = [];
+
+  for (const metric of candidates) {
+    try {
+      const report = await analyticsApi.reports.query({
+        ids: `channel==${channelId}`,
+        startDate: start,
+        endDate: end,
+        metrics: metric,
+        dimensions: 'day',
+        sort: 'day',
+      });
+      const rows = report.data.rows || [];
+      const total = rows.reduce((a, r) => a + (Number(r[1]) || 0), 0);
+      results.push({
+        metric,
+        supported: true,
+        rows: rows.length,
+        total,
+        sample: rows.slice(0, 3),
+      });
+    } catch (err) {
+      results.push({
+        metric,
+        supported: false,
+        error: (err?.message || String(err)).slice(0, 300),
+      });
+    }
+  }
+
+  res.json({ channelId, channelTitle: tokenData.channelTitle, range: { start, end }, results });
+});
+
 api.get('/admin/storage-status', (req, res) => {
   res.json({ tokens: tokenStorageStatus(), db: db.stats(), dataDir: config.DATA_DIR });
 });
