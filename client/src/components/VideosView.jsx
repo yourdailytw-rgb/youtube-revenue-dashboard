@@ -157,6 +157,34 @@ export function VideosView({ range, channels, allChannels = [] }) {
     [state.videos, filter]
   );
 
+  /**
+   * Combined current pace across everything listed, plus the per-channel split.
+   *
+   * This is a sum over the ranked videos we track, not over a channel's entire
+   * catalogue — so it is labelled as such rather than presented as the channel
+   * group's true total throughput.
+   */
+  const pace = useMemo(() => {
+    const contributing = videos.filter((v) => v.viewsPerHour != null && v.viewsPerHour > 0);
+    const total = contributing.reduce((a, v) => a + v.viewsPerHour, 0);
+
+    const byChannel = new Map();
+    for (const v of contributing) {
+      const current = byChannel.get(v.channelId) || { title: v.channelTitle, viewsPerHour: 0, videos: 0 };
+      current.viewsPerHour += v.viewsPerHour;
+      current.videos += 1;
+      byChannel.set(v.channelId, current);
+    }
+
+    return {
+      total,
+      videos: contributing.length,
+      channels: [...byChannel.entries()]
+        .map(([id, c]) => ({ id, ...c }))
+        .sort((a, b) => b.viewsPerHour - a.viewsPerHour),
+    };
+  }, [videos]);
+
   const maxValue = Math.max(...videos.map((v) => Number(v[active.field]) || 0), 1);
 
   if (state.loading && !state.videos?.length) {
@@ -294,6 +322,8 @@ export function VideosView({ range, channels, allChannels = [] }) {
         </Card>
       )}
 
+      {sort === 'viewsPerHour' && pace.videos > 0 && <PaceBar pace={pace} hours={velocityHours} allChannels={allChannels} />}
+
       {/* Ranking */}
       <Card className="overflow-hidden">
         <CardHeader
@@ -426,6 +456,71 @@ export function VideosView({ range, channels, allChannels = [] }) {
         )}
       </Card>
     </div>
+  );
+}
+
+/**
+ * Combined views-per-hour across every channel, shown above the ranking so the
+ * per-video list has a headline figure to sit under.
+ */
+function PaceBar({ pace, hours, allChannels }) {
+  return (
+    <Card className="overflow-hidden border-warn/30">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3 sm:px-5">
+        <div className="shrink-0">
+          <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-dim">
+            <Flame size={11} className="text-warn" />
+            Combined pace · all channels
+          </p>
+          <p className="mt-0.5 text-2xl font-semibold tabular text-ink">
+            {formatNumberShort(pace.total)}
+            <span className="ml-1 text-base font-normal text-ink-dim">views/h</span>
+          </p>
+          <p className="text-[11px] text-ink-dim">
+            over the last {hours}h · summed across {pace.videos} ranked video
+            {pace.videos === 1 ? '' : 's'}
+          </p>
+        </div>
+
+        <div className="shrink-0 border-l border-line pl-6">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-dim">
+            At this pace · 24h
+          </p>
+          <p className="mt-0.5 text-2xl font-semibold tabular text-ink">
+            {formatNumberShort(pace.total * 24)}
+          </p>
+          <p className="text-[11px] text-ink-dim">if the current rate holds</p>
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-dim">
+            Split by channel
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {pace.channels.map((c) => {
+              const idx = Math.max(0, allChannels.findIndex((x) => x.id === c.id));
+              const share = pace.total > 0 ? c.viewsPerHour / pace.total : 0;
+              return (
+                <span
+                  key={c.id}
+                  title={`${c.videos} video${c.videos === 1 ? '' : 's'} · ${(share * 100).toFixed(0)}% of current pace`}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface-2 px-2 py-1 text-xs"
+                >
+                  <span
+                    className="h-2 w-2 shrink-0 rounded-full"
+                    style={{ background: channelColor(idx) }}
+                  />
+                  <span className="max-w-[120px] truncate text-ink-dim">{String(c.title).trim()}</span>
+                  <span className="font-semibold tabular text-ink">
+                    {formatNumberShort(c.viewsPerHour)}/h
+                  </span>
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </Card>
   );
 }
 
