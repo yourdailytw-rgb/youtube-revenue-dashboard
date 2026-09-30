@@ -147,6 +147,29 @@ export function VideosView({ range, channels, allChannels = [] }) {
     };
   }, [range.start, range.end, channels?.join(','), sort, velocityHours]);
 
+  // Live combined pace, polled independently of the ranking so the headline
+  // figure keeps moving without a reload. It covers EVERY tracked video, not
+  // just the ones listed, so it is the channels' real measured throughput.
+  const [livePace, setLivePace] = useState(null);
+
+  useEffect(() => {
+    if (sort !== 'viewsPerHour') return undefined;
+    let cancelled = false;
+    const load = () =>
+      api
+        .livePace(velocityHours)
+        .then((res) => !cancelled && setLivePace(res))
+        .catch(() => {});
+    load();
+    // Snapshots land every ~10 minutes; polling a minute apart picks each one
+    // up promptly and costs nothing, since the endpoint only reads SQLite.
+    const timer = setInterval(load, 60000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [sort, velocityHours]);
+
   const active = RANKINGS.find((r) => r.id === sort) || RANKINGS[0];
 
   const videos = useMemo(
@@ -322,7 +345,9 @@ export function VideosView({ range, channels, allChannels = [] }) {
         </Card>
       )}
 
-      {sort === 'viewsPerHour' && pace.videos > 0 && <PaceBar pace={pace} hours={velocityHours} allChannels={allChannels} />}
+      {sort === 'viewsPerHour' && (livePace?.videosCounted > 0 || pace.videos > 0) && (
+        <PaceBar live={livePace} fallback={pace} hours={velocityHours} allChannels={allChannels} />
+      )}
 
       {/* Ranking */}
       <Card className="overflow-hidden">
@@ -463,22 +488,54 @@ export function VideosView({ range, channels, allChannels = [] }) {
  * Combined views-per-hour across every channel, shown above the ranking so the
  * per-video list has a headline figure to sit under.
  */
-function PaceBar({ pace, hours, allChannels }) {
+/**
+ * Combined views-per-hour across every tracked video, refreshed on a timer so it
+ * reads as a live figure rather than a snapshot of page load.
+ *
+ * Prefers the live endpoint, which covers all tracked videos; falls back to the
+ * sum of the listed ones only until that first response lands.
+ */
+function PaceBar({ live, fallback, hours, allChannels }) {
+  const usingLive = live?.videosCounted > 0;
+  const total = usingLive ? live.total : fallback.total;
+  const channels = usingLive
+    ? live.channels.map((c) => ({ id: c.channelId, title: c.title, viewsPerHour: c.viewsPerHour, videos: c.videos }))
+    : fallback.channels;
+  const videoCount = usingLive ? live.videosCounted : fallback.videos;
+
+  // How stale the underlying snapshot is — the number only moves when a new one
+  // lands, so showing its age is more honest than implying continuous updates.
+  const ageMinutes = live?.lastSnapshot
+    ? Math.max(0, Math.round((Date.now() - new Date(live.lastSnapshot).getTime()) / 60000))
+    : null;
+  const fresh = ageMinutes !== null && ageMinutes <= 20;
+
   return (
     <Card className="overflow-hidden border-warn/30">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3 sm:px-5">
         <div className="shrink-0">
           <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-dim">
-            <Flame size={11} className="text-warn" />
-            Combined pace · all channels
+            <span className="relative flex h-2 w-2">
+              {fresh && (
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-warn opacity-60" />
+              )}
+              <span
+                className={clsx(
+                  'relative inline-flex h-2 w-2 rounded-full',
+                  fresh ? 'bg-warn' : 'bg-ink-dim'
+                )}
+              />
+            </span>
+            Live pace · all channels
           </p>
           <p className="mt-0.5 text-2xl font-semibold tabular text-ink">
-            {formatNumberShort(pace.total)}
+            {formatNumberShort(total)}
             <span className="ml-1 text-base font-normal text-ink-dim">views/h</span>
           </p>
           <p className="text-[11px] text-ink-dim">
-            over the last {hours}h · summed across {pace.videos} ranked video
-            {pace.videos === 1 ? '' : 's'}
+            {ageMinutes !== null
+              ? `updated ${ageMinutes === 0 ? 'just now' : `${ageMinutes} min ago`} · ${hours}h window`
+              : `${hours}h window`}
           </p>
         </div>
 
@@ -487,9 +544,13 @@ function PaceBar({ pace, hours, allChannels }) {
             At this pace · 24h
           </p>
           <p className="mt-0.5 text-2xl font-semibold tabular text-ink">
-            {formatNumberShort(pace.total * 24)}
+            {formatNumberShort(total * 24)}
           </p>
-          <p className="text-[11px] text-ink-dim">if the current rate holds</p>
+          <p className="text-[11px] text-ink-dim">
+            {usingLive
+              ? `across all ${videoCount} tracked videos`
+              : `across ${videoCount} listed videos`}
+          </p>
         </div>
 
         <div className="min-w-0 flex-1">
@@ -497,9 +558,9 @@ function PaceBar({ pace, hours, allChannels }) {
             Split by channel
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {pace.channels.map((c) => {
+            {channels.map((c) => {
               const idx = Math.max(0, allChannels.findIndex((x) => x.id === c.id));
-              const share = pace.total > 0 ? c.viewsPerHour / pace.total : 0;
+              const share = total > 0 ? c.viewsPerHour / total : 0;
               return (
                 <span
                   key={c.id}

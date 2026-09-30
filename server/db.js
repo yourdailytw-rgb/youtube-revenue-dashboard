@@ -578,6 +578,66 @@ function getChannelVideoSnapshots(channelId, sinceISO) {
     .all(channelId, sinceISO);
 }
 
+/**
+ * Current views-per-hour across EVERY tracked video, grouped by channel.
+ *
+ * The Videos tab sums only the videos it has listed, which is capped for
+ * display. This is the real figure: every video we snapshot, so the total is
+ * the channels' actual measured throughput rather than the top N of a ranking.
+ *
+ * Pure SQLite — no API calls — so the client can poll it cheaply and the number
+ * moves as soon as a new snapshot lands.
+ */
+function livePace(windowHours = 24) {
+  const ids = getTrackedVideoIds();
+  if (!ids.length) {
+    return { total: 0, channels: [], videosCounted: 0, lastSnapshot: null, windowHours };
+  }
+
+  const velocity = videoVelocity(ids, windowHours);
+  if (velocity.size === 0) {
+    return { total: 0, channels: [], videosCounted: 0, lastSnapshot: null, windowHours };
+  }
+
+  const marks = ids.map(() => '?').join(',');
+  const owners = db
+    .prepare(`SELECT video_id, channel_id FROM videos WHERE video_id IN (${marks})`)
+    .all(...ids);
+  const channelOf = new Map(owners.map((r) => [r.video_id, r.channel_id]));
+  const titles = new Map(listChannels().map((c) => [c.id, c.custom_name || c.title]));
+
+  const byChannel = new Map();
+  let total = 0;
+  let videosCounted = 0;
+
+  for (const [videoId, vel] of velocity) {
+    const channelId = channelOf.get(videoId);
+    if (!channelId || !(vel.viewsPerHour > 0)) continue;
+    const entry = byChannel.get(channelId) || {
+      channelId,
+      title: titles.get(channelId) || channelId,
+      viewsPerHour: 0,
+      videos: 0,
+    };
+    entry.viewsPerHour += vel.viewsPerHour;
+    entry.videos += 1;
+    byChannel.set(channelId, entry);
+    total += vel.viewsPerHour;
+    videosCounted += 1;
+  }
+
+  const latest = db.prepare('SELECT MAX(captured_at) AS t FROM video_snapshots').get();
+
+  return {
+    total,
+    channels: [...byChannel.values()].sort((a, b) => b.viewsPerHour - a.viewsPerHour),
+    videosCounted,
+    videosTracked: ids.length,
+    lastSnapshot: latest?.t || null,
+    windowHours,
+  };
+}
+
 function pruneVideoSnapshots(beforeISO) {
   db.prepare('DELETE FROM video_snapshots WHERE captured_at < ?').run(beforeISO);
 }
@@ -847,6 +907,7 @@ module.exports = {
   getTrackedVideoIds,
   getAllVideos,
   videoVelocityWindows,
+  livePace,
   getChannelVideoSnapshots,
   recordEngagedObservation,
   engagedSettling,

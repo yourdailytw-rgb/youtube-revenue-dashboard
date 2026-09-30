@@ -505,6 +505,15 @@ api.get('/sync/status', (req, res) => res.json(sync.syncStatus()));
 api.get('/live-status', (req, res) => res.json(livecounts.liveStatus()));
 
 /**
+ * Current combined views-per-hour across every tracked video.
+ * Reads only local snapshots, so it is cheap enough for the client to poll.
+ */
+api.get('/live-pace', (req, res) => {
+  const hours = Math.min(168, Math.max(1, Number(req.query.hours) || 24));
+  res.json(db.livePace(hours));
+});
+
+/**
  * Videos that are spiking right now — including old ones picking up again.
  * Query params tune the detector: recentHours, baselineHours, minViewsPerHour,
  * spikeThreshold, channels, kind.

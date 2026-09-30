@@ -52,6 +52,7 @@ export const api = {
 
   syncStatus: () => request('/api/sync/status'),
   liveStatus: () => request('/api/live-status'),
+  livePace: (hours) => request(`/api/live-pace${qs({ hours })}`),
   trending: ({ channels, recentHours, baselineHours, minViewsPerHour, kind, limit } = {}) =>
     request(
       `/api/trending${qs({ channels: channels?.join(','), recentHours, baselineHours, minViewsPerHour, kind, limit })}`

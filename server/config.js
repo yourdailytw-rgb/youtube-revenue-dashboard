@@ -66,10 +66,15 @@ const config = {
   BACKFILL_START: process.env.BACKFILL_START || '2024-01-01',
   SYNC_REFRESH_DAYS: Number(process.env.SYNC_REFRESH_DAYS) || 14,
   SYNC_INTERVAL_MINUTES: Number(process.env.SYNC_INTERVAL_MINUTES) || 180,
-  // How often to snapshot the live cumulative view counter. Needs to be well
+  // How often to snapshot the live cumulative view counters. Needs to be well
   // under an hour so the last snapshot before midnight Pacific lands close to
-  // the actual day boundary.
-  LIVE_POLL_MINUTES: Number(process.env.LIVE_POLL_MINUTES) || 20,
+  // the actual day boundary — and short enough that the live pace figure moves
+  // often enough to read as live.
+  //
+  // Cost per cycle is roughly one Data API unit per channel plus one per 50
+  // tracked videos, so ~8 units here. At 10 minutes that is ~1,200 units a day
+  // against a 10,000 quota, leaving plenty of headroom to go lower if wanted.
+  LIVE_POLL_MINUTES: Number(process.env.LIVE_POLL_MINUTES) || 10,
 
   // Token refresh cadence, unchanged from v1.
   TOKEN_REFRESH_HOURS: 6,
