@@ -52,6 +52,21 @@ const DEFAULTS = {
   // Hard cap on how many trailing days may be claimed as unsettled, so a
   // genuinely weak stretch can never cascade backwards through history.
   maxLookbackDays: 5,
+  // LEVEL ANCHOR: re-scale the prediction to the RPM YouTube actually paid
+  // over the most recent N confirmed days. 0 disables it.
+  levelWindowDays: 14,
+  levelClamp: [0.5, 2.5],
+  // Extrapolate the recent RPM slope across the gap to the estimated day.
+  levelSlope: true,
+  levelSlopeClamp: [0.85, 1.25],
+  // How much of the anchor's correction to apply (1 = all of it). Below 1 it is
+  // shrunk toward "no correction", which stops it chasing ordinary day-to-day
+  // wobble when RPM is stable.
+  levelDamping: 0.85,
+  // Back-test realism: when re-predicting day D, hide the confirmed revenue of
+  // the (lag - 1) days immediately before it, because in production those days
+  // are not reported yet either. 1 reproduces the old, optimistic back-test.
+  backtestLagDays: 2,
 };
 
 const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, v));
@@ -238,6 +253,46 @@ function computeTrendFactor(rows, model, opts = DEFAULTS) {
 }
 
 /**
+ * Ratio of what YouTube actually paid to what the model predicted, over the
+ * most recent confirmed days — the model's current level error. Computed as a
+ * ratio of sums so a quiet day cannot dominate. Optionally extrapolates the
+ * ratio's recent slope across the gap to the target date.
+ */
+function computeLevelAnchor(priorRows, model, dowFactors, targetDate, opts) {
+  const recent = priorRows.filter(isTrainable).slice(-opts.levelWindowDays);
+  const points = [];
+  let actual = 0;
+  let predicted = 0;
+  for (const row of recent) {
+    const p = predictBase(model, row) * (dowFactors[dayOfWeek(row.date)] ?? 1);
+    if (!(p > 0)) continue;
+    actual += row.revenue ?? 0;
+    predicted += p;
+    points.push({ x: diffDays(targetDate, row.date), y: (row.revenue ?? 0) / p });
+  }
+  if (points.length < 3 || predicted <= 0) return null;
+
+  const level = clamp(actual / predicted, opts.levelClamp);
+
+  let slope = 1;
+  if (opts.levelSlope && points.length >= 5) {
+    // Least-squares line through the daily ratios; project it to x = 0 (the
+    // target day) and express that as a multiple of the window's level.
+    const n = points.length;
+    const mx = points.reduce((a, p) => a + p.x, 0) / n;
+    const my = points.reduce((a, p) => a + p.y, 0) / n;
+    const sxx = points.reduce((a, p) => a + (p.x - mx) ** 2, 0);
+    if (sxx > 0) {
+      const b = points.reduce((a, p) => a + (p.x - mx) * (p.y - my), 0) / sxx;
+      const projected = my + b * (0 - mx);
+      if (my > 0) slope = clamp(projected / my, opts.levelSlopeClamp);
+    }
+  }
+
+  return { level, slope, days: points.length };
+}
+
+/**
  * Estimate revenue for one date using only history strictly before it.
  * `history` must be sorted ascending by date.
  */
@@ -260,7 +315,17 @@ function estimateForDate(history, target, opts = DEFAULTS) {
   const trend = computeTrendFactor(trainRows, model, opts);
 
   const base = predictBase(model, targetRow);
-  const revenue = Math.max(0, base * dowFactor * trend);
+
+  // The level anchor supersedes the relative trend factor when enabled: rather
+  // than asking "is last week higher than last month", it asks "what did YouTube
+  // actually pay per view over the last few confirmed days" and re-scales to it.
+  // That is what keeps up with a steep RPM climb such as the Q4 ramp, which the
+  // fitted RPM — an average over weeks — always lags.
+  const anchor = opts.levelWindowDays > 0 ? computeLevelAnchor(priorAll, model, dowFactors, target.date, opts) : null;
+  const adjustment = anchor
+    ? 1 + (opts.levelDamping ?? 1) * (anchor.level * anchor.slope - 1)
+    : trend;
+  const revenue = Math.max(0, base * dowFactor * adjustment);
 
   return {
     date: target.date,
@@ -268,6 +333,7 @@ function estimateForDate(history, target, opts = DEFAULTS) {
     base,
     dowFactor,
     trendFactor: trend,
+    levelAnchor: anchor,
     model,
     inputs: {
       lfViews: targetRow.lf_views ?? 0,
@@ -291,8 +357,18 @@ function backtest(history, opts = DEFAULTS) {
   const targets = complete.slice(-opts.backtestDays);
   const errors = [];
 
+  const lag = Math.max(1, opts.backtestLagDays ?? 1);
+
   for (const row of targets) {
-    const result = estimateForDate(history, row, opts);
+    // Hide the confirmed revenue of the days production would not have yet.
+    const hideAfter = addDays(row.date, -lag);
+    const visible =
+      lag > 1
+        ? history.map((r) =>
+            r.date > hideAfter && r.date < row.date ? { ...r, revenue: null, revenue_present: 0 } : r
+          )
+        : history;
+    const result = estimateForDate(visible, row, opts);
     if (!result) continue;
     const actual = row.revenue ?? 0;
     if (actual <= 0) continue;

@@ -146,4 +146,42 @@ test('survives a channel with zero views', () => {
   assert.ok(Array.isArray(result.estimates));
 });
 
+test('keeps up with a steadily rising RPM instead of lagging it (Q4 ramp)', () => {
+  // RPM climbs ~1.2% a day — roughly the Aug→Oct 2026 ramp that left the old
+  // model 20–30% low on every estimate.
+  const end = today();
+  const rows = [];
+  for (let i = 89; i >= 0; i--) {
+    const date = addDays(end, -i);
+    const rpm = 30 * Math.pow(1.012, 89 - i);
+    const lf = 100000;
+    rows.push({
+      date,
+      revenue: (lf / 1000) * rpm,
+      lf_views: lf,
+      sf_views: 0,
+      views: lf,
+      revenue_present: 1,
+      views_present: 1,
+    });
+  }
+
+  const anchored = backtest(rows, { ...DEFAULTS, backtestLagDays: 3 });
+  const unanchored = backtest(rows, { ...DEFAULTS, backtestLagDays: 3, levelWindowDays: 0 });
+
+  assert.ok(
+    Math.abs(unanchored.bias) > 0.08,
+    `expected the un-anchored model to lag a ramp (bias was ${(unanchored.bias * 100).toFixed(1)}%)`
+  );
+  // The anchor is damped (0.85) so it does not chase noise in calm months, which
+  // leaves a small residual on a ramp this steep — measured at about -6% against
+  // the un-anchored model's -25%. The property that matters is that the lag is
+  // mostly gone, not that it is exactly zero.
+  assert.ok(
+    Math.abs(anchored.bias) < 0.08 && Math.abs(anchored.bias) < Math.abs(unanchored.bias) / 3,
+    `anchored model should remove most of the lag — bias was ${(anchored.bias * 100).toFixed(1)}% vs ${(unanchored.bias * 100).toFixed(1)}% un-anchored`
+  );
+  assert.ok(anchored.medianAbsPctError < unanchored.medianAbsPctError, 'anchor must reduce error on a ramp');
+});
+
 console.log(`\n${passed} check(s) passed\n`);
