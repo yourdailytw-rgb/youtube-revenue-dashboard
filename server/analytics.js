@@ -237,6 +237,10 @@ function summarize(series) {
   const completeRevenue = completeDays.reduce((a, d) => a + d.effectiveRevenue, 0);
 
   out.days = series.length;
+  // Denominators for per-day comparisons. Revenue and views are reported on
+  // different days at the edge, so each gets its own count.
+  out.daysWithViews = series.filter((d) => d.hasViews).length;
+  out.daysReported = series.filter((d) => d.hasRevenue).length;
   out.daysWithData = daysWithRevenue.length;
   out.daysComplete = completeDays.length;
   out.daysPartial = daysWithRevenue.length - completeDays.length;
@@ -265,24 +269,61 @@ const DELTA_FIELDS = [
   'avg_view_duration',
 ];
 
-/** Percentage deltas between two summaries. */
-function computeDeltas(current, previous) {
+/**
+ * How to express each summed field as a per-day figure. Rate fields (RPM, CPM,
+ * average duration) are already independent of period length and are compared
+ * as they are.
+ */
+const PER_DAY = {
+  // dailyAverage already divides by complete revenue days only.
+  effectiveRevenue: (s) => s?.dailyAverage ?? 0,
+  revenue: (s) => (s?.daysReported ? s.revenue / s.daysReported : 0),
+  views: (s) => (s?.daysWithViews ? s.views / s.daysWithViews : 0),
+  lf_views: (s) => (s?.daysWithViews ? s.lf_views / s.daysWithViews : 0),
+  sf_views: (s) => (s?.daysWithViews ? s.sf_views / s.daysWithViews : 0),
+  watch_hours: (s) => (s?.daysWithViews ? s.watch_hours / s.daysWithViews : 0),
+  subs_net: (s) => (s?.daysWithViews ? s.subs_net / s.daysWithViews : 0),
+};
+
+/**
+ * Should two periods be compared per day rather than as raw totals?
+ *
+ * Totals are only comparable when both periods cover the same number of days
+ * WITH DATA. "This month so far" (13 days, two still unreported) against all of
+ * August (31 days) would otherwise read as a 60% collapse even if October is
+ * pacing well ahead. The same trap catches an equal-length previous period when
+ * the current one ends in days YouTube has not reported yet.
+ */
+function shouldComparePerDay(current, previous) {
+  if (!current || !previous) return false;
+  return current.days !== previous.days || current.daysComplete !== previous.daysComplete;
+}
+
+/** Percentage deltas between two summaries, per day when lengths differ. */
+function computeDeltas(current, previous, { perDay = false } = {}) {
   const deltas = {};
   for (const field of DELTA_FIELDS) {
-    const now = current?.[field] ?? 0;
-    const before = previous?.[field] ?? 0;
+    const pick = perDay && PER_DAY[field] ? PER_DAY[field] : (s) => s?.[field] ?? 0;
+    const now = pick(current);
+    const before = pick(previous);
     deltas[field] = {
       current: now,
       previous: before,
       absolute: now - before,
       pct: before !== 0 ? (now - before) / Math.abs(before) : now !== 0 ? null : 0,
+      basis: perDay && PER_DAY[field] ? 'per-day' : 'total',
     };
   }
   return deltas;
 }
 
+function pctChange(now, before) {
+  if (before === null || before === undefined || before === 0) return null;
+  return (now - before) / Math.abs(before);
+}
+
 /** Per-channel totals for the ranking / contribution views. */
-function channelBreakdown({ channels, series, previousSeries }) {
+function channelBreakdown({ channels, series, previousSeries, perDay = false }) {
   const rows = channels.map((channel) => {
     const current = summarize(series.byChannel[channel.id] || []);
     const previous = previousSeries ? summarize(previousSeries.byChannel[channel.id] || []) : null;
@@ -307,12 +348,14 @@ function channelBreakdown({ channels, series, previousSeries }) {
       cpm: current.cpm,
       dailyAverage: current.dailyAverage,
       previousRevenue: previous ? previous.effectiveRevenue : null,
-      revenueDeltaPct:
-        previous && previous.effectiveRevenue !== 0
-          ? (current.effectiveRevenue - previous.effectiveRevenue) / Math.abs(previous.effectiveRevenue)
-          : null,
-      viewsDeltaPct:
-        previous && previous.views !== 0 ? (current.views - previous.views) / Math.abs(previous.views) : null,
+      revenueDeltaPct: pctChange(
+        perDay ? PER_DAY.effectiveRevenue(current) : current.effectiveRevenue,
+        previous ? (perDay ? PER_DAY.effectiveRevenue(previous) : previous.effectiveRevenue) : null
+      ),
+      viewsDeltaPct: pctChange(
+        perDay ? PER_DAY.views(current) : current.views,
+        previous ? (perDay ? PER_DAY.views(previous) : previous.views) : null
+      ),
     };
   });
 
@@ -475,6 +518,7 @@ module.exports = {
   buildSeries,
   summarize,
   computeDeltas,
+  shouldComparePerDay,
   channelBreakdown,
   monthlyBreakdown,
   rollingAverage,

@@ -186,9 +186,24 @@ api.get('/analytics', (req, res) => {
   if (range.error) return res.status(400).json({ error: range.error });
   const { start, end, channelIds } = range;
 
-  const compareMode = ['previous', 'year', 'none'].includes(req.query.compare)
+  // Comparison modes: the previous equal-length period, the same dates a year
+  // earlier, or ANY explicit range (e.g. this month vs August).
+  let compareMode = ['previous', 'year', 'none', 'custom'].includes(req.query.compare)
     ? req.query.compare
     : 'previous';
+
+  let customRange = null;
+  if (compareMode === 'custom') {
+    const cs = req.query.compareStart;
+    const ce = req.query.compareEnd;
+    if (isValidISO(cs) && isValidISO(ce) && cs <= ce) {
+      customRange = { start: cs, end: ce };
+    } else {
+      // A custom comparison with no usable range degrades to the default
+      // rather than failing the whole request.
+      compareMode = 'previous';
+    }
+  }
 
   const channels = db.listChannels().filter((c) => channelIds.includes(c.id));
   const series = analytics.buildSeries({ channelIds, start, end });
@@ -196,19 +211,27 @@ api.get('/analytics', (req, res) => {
 
   let comparison = null;
   let previousSeries = null;
+  let perDay = false;
   if (compareMode !== 'none' && channelIds.length) {
     const prevRange =
-      compareMode === 'year'
-        ? analytics.previousYearPeriod(start, end)
-        : analytics.previousPeriod(start, end);
+      compareMode === 'custom'
+        ? customRange
+        : compareMode === 'year'
+          ? analytics.previousYearPeriod(start, end)
+          : analytics.previousPeriod(start, end);
     previousSeries = analytics.buildSeries({ channelIds, start: prevRange.start, end: prevRange.end });
     const prevSummary = analytics.summarize(previousSeries.totals);
+    perDay = analytics.shouldComparePerDay(summary, prevSummary);
     comparison = {
       mode: compareMode,
-      range: prevRange,
+      range: { ...prevRange, days: diffDays(prevRange.start, prevRange.end) + 1 },
       summary: prevSummary,
       totals: previousSeries.totals,
-      deltas: analytics.computeDeltas(summary, prevSummary),
+      // When the two periods cover different numbers of days with data, every
+      // summed metric is compared per day — otherwise 13 days against 31 would
+      // read as a collapse regardless of how either period actually performed.
+      perDay,
+      deltas: analytics.computeDeltas(summary, prevSummary, { perDay }),
     };
   }
 
@@ -232,7 +255,7 @@ api.get('/analytics', (req, res) => {
     series,
     summary,
     comparison,
-    breakdown: analytics.channelBreakdown({ channels, series, previousSeries }),
+    breakdown: analytics.channelBreakdown({ channels, series, previousSeries, perDay }),
     monthly: analytics.monthlyBreakdown(wide.totals),
     // Rolling averages are computed over the full history and then cropped to
     // the visible range, so a 28-day average at the start of the range is a

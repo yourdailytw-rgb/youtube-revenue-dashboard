@@ -28,8 +28,8 @@ import { EstimatorView } from './components/EstimatorView';
 import { SettingsView } from './components/SettingsView';
 import { Tabs, Card, Button, EmptyState, Skeleton } from './components/ui';
 import { api } from './lib/api';
-import { setCurrency, formatDate } from './lib/format';
-import { todayISO, startOfMonth, endOfMonth } from './lib/ranges';
+import { setCurrency, formatDate, formatMonth } from './lib/format';
+import { todayISO, addDays, startOfMonth, endOfMonth, alignToMonth } from './lib/ranges';
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: <LayoutDashboard size={13} /> },
@@ -49,6 +49,29 @@ const COMPARE_OPTIONS = [
   { id: 'none', label: 'No comparison' },
 ];
 
+function readCompare(params) {
+  const mode = params.get('compare') || 'previous';
+  const valid = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  const empty = { compareMonth: null, compareStart: null, compareEnd: null };
+
+  // A month comparison is stored as the month itself, not as dates, so it stays
+  // aligned date-for-date with whatever range is being viewed.
+  if (mode === 'month') {
+    const key = params.get('compareMonth');
+    return /^\d{4}-\d{2}$/.test(key || '')
+      ? { ...empty, compare: 'month', compareMonth: key }
+      : { ...empty, compare: 'previous' };
+  }
+  if (mode === 'custom') {
+    const cs = params.get('compareStart');
+    const ce = params.get('compareEnd');
+    return valid(cs) && valid(ce) && cs <= ce
+      ? { ...empty, compare: 'custom', compareStart: cs, compareEnd: ce }
+      : { ...empty, compare: 'previous' };
+  }
+  return { ...empty, compare: mode };
+}
+
 /** Tab/metric/channel state persists in the URL; the date range does not. */
 function readUrlState() {
   const params = new URLSearchParams(window.location.search);
@@ -60,7 +83,10 @@ function readUrlState() {
     start: params.get('start') || startOfMonth(today),
     end: params.get('end') || today,
     channels: params.get('channels') ? params.get('channels').split(',').filter(Boolean) : [],
-    compare: params.get('compare') || 'previous',
+    // Same rule as the main range: an explicit comparison range in the URL is
+    // honoured (so "this month vs August" can be shared as a link) but never
+    // written back, so a plain reload returns to the previous-period default.
+    ...readCompare(params),
     metric: params.get('metric') || 'revenue',
   };
 }
@@ -75,9 +101,25 @@ function writeUrlState(state) {
   const params = new URLSearchParams();
   params.set('tab', state.tab);
   params.set('compare', state.compare);
+  if (state.compare === 'month' && state.compareMonth) params.set('compareMonth', state.compareMonth);
   params.set('metric', state.metric);
   if (state.channels.length) params.set('channels', state.channels.join(','));
   window.history.replaceState(null, '', `?${params.toString()}`);
+}
+
+/**
+ * What to send the API for the current comparison choice. Month comparisons are
+ * resolved here, against the range being viewed, into explicit dates.
+ */
+function comparisonParams(state) {
+  if (state.compare === 'month' && state.compareMonth) {
+    const aligned = alignToMonth(state.start, state.end, state.compareMonth);
+    return { compare: 'custom', compareStart: aligned.start, compareEnd: aligned.end };
+  }
+  if (state.compare === 'custom') {
+    return { compare: 'custom', compareStart: state.compareStart, compareEnd: state.compareEnd };
+  }
+  return { compare: state.compare };
 }
 
 export default function App() {
@@ -133,6 +175,7 @@ export default function App() {
         end: state.end,
         channels: state.channels,
         compare: state.compare,
+        ...comparisonParams(state),
       });
       setData(res);
     } catch (err) {
@@ -140,7 +183,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [state.start, state.end, state.channels, state.compare]);
+  }, [state.start, state.end, state.channels, state.compare, state.compareMonth, state.compareStart, state.compareEnd]);
 
   useEffect(() => {
     loadAnalytics();
@@ -176,10 +219,58 @@ export default function App() {
   // Bounds the calendar and the "All time" preset to what actually exists.
   const earliest = data?.dataRange?.min || undefined;
 
+  /**
+   * Whole months available as one-click comparison targets: the current month
+   * (so far) and the twelve before it, bounded by the data we actually hold.
+   */
+  const monthChoices = useMemo(() => {
+    const today = todayISO();
+    const out = [];
+    let cursor = startOfMonth(today);
+    for (let i = 0; i < 13; i++) {
+      const monthEnd = endOfMonth(cursor);
+      if (earliest && monthEnd < earliest) break;
+      out.push({
+        key: cursor.slice(0, 7),
+        start: cursor,
+        end: monthEnd > today ? today : monthEnd,
+        partial: monthEnd > today,
+      });
+      cursor = startOfMonth(addDays(cursor, -1));
+    }
+    return out;
+  }, [earliest]);
+
+  const compareSelectValue =
+    state.compare === 'month' && state.compareMonth ? `month:${state.compareMonth}` : state.compare;
+
+  const onCompareChange = (value) => {
+    if (value.startsWith('month:')) {
+      patch({ compare: 'month', compareMonth: value.slice(6) });
+      return;
+    }
+    if (value === 'custom') {
+      // Open the custom picker on last month's matching dates — the most likely
+      // starting point — rather than on nothing.
+      const seed = monthChoices[1] || monthChoices[0];
+      const aligned = seed ? alignToMonth(state.start, state.end, seed.key) : null;
+      patch({
+        compare: 'custom',
+        compareStart: state.compareStart || aligned?.start,
+        compareEnd: state.compareEnd || aligned?.end,
+      });
+      return;
+    }
+    patch({ compare: value });
+  };
+
   const compareLabel = useMemo(() => {
     if (state.compare === 'none' || !data?.comparison) return null;
     const { start, end } = data.comparison.range;
-    return `${formatDate(start, 'short')} – ${formatDate(end, 'short')}`;
+    const name = `${formatDate(start, 'short')} – ${formatDate(end, 'short')}`;
+    // Only flagged when the two periods still differ in days with data — e.g.
+    // today is partly measured, or a month is shorter than the range.
+    return data.comparison.perDay ? `${name} · per day` : name;
   }, [state.compare, data]);
 
   const tokenIssues = channels.filter((c) => c.health && c.health.status !== 'ok').length;
@@ -243,17 +334,37 @@ export default function App() {
                   onChange={(next) => patch({ channels: next })}
                 />
                 <select
-                  value={state.compare}
-                  onChange={(e) => patch({ compare: e.target.value })}
+                  value={compareSelectValue}
+                  onChange={(e) => onCompareChange(e.target.value)}
                   className="max-w-[46vw] truncate rounded-lg border border-line bg-surface px-2.5 py-2 text-[13px] font-medium text-ink focus:border-accent/60 focus:outline-none sm:max-w-none"
                   title="What the current period is compared against"
                 >
-                  {COMPARE_OPTIONS.map((opt) => (
+                  {COMPARE_OPTIONS.filter((o) => o.id !== 'none').map((opt) => (
                     <option key={opt.id} value={opt.id}>
                       {opt.label}
                     </option>
                   ))}
+                  <optgroup label="Same dates in another month">
+                    {monthChoices.map((m) => (
+                      <option key={m.key} value={`month:${m.key}`}>
+                        {formatMonth(m.key)} · same dates
+                      </option>
+                    ))}
+                  </optgroup>
+                  <option value="custom">Custom range…</option>
+                  <option value="none">No comparison</option>
                 </select>
+                {state.compare === 'custom' && state.compareStart && (
+                  <span className="flex items-center gap-1">
+                    <span className="text-[11px] font-medium uppercase tracking-wide text-ink-dim">vs</span>
+                    <DateRangePicker
+                      start={state.compareStart}
+                      end={state.compareEnd}
+                      earliest={earliest}
+                      onChange={({ start, end }) => patch({ compareStart: start, compareEnd: end })}
+                    />
+                  </span>
+                )}
                 <DateRangePicker
                   start={state.start}
                   end={state.end}

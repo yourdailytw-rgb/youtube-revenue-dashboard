@@ -95,3 +95,19 @@ export function describeRange(start, end) {
   if (days === 1) return '1 day';
   return `${days} days`;
 }
+
+/**
+ * The same dates as [start, end], shifted into another month — so comparing
+ * 1–13 October against August means 1–13 August, not all of August. Day
+ * numbers are clamped to the target month's length (31 Oct -> 30 Sep), and the
+ * end never runs past today.
+ */
+export function alignToMonth(start, end, monthKey) {
+  const [sy, sm] = start.split('-').map(Number);
+  const [ty, tm] = monthKey.split('-').map(Number);
+  const offset = (ty - sy) * 12 + (tm - sm);
+  const today = todayISO();
+  const shiftedStart = addMonths(start, offset);
+  const shiftedEnd = addMonths(end, offset);
+  return { start: shiftedStart, end: shiftedEnd > today ? today : shiftedEnd };
+}

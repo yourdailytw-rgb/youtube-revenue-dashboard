@@ -40,8 +40,10 @@ export const api = {
   disconnectChannel: (id, purge = false) =>
     request(`/api/channels/${id}${qs({ purge })}`, { method: 'DELETE' }),
 
-  analytics: ({ start, end, channels, compare }) =>
-    request(`/api/analytics${qs({ start, end, channels: channels?.join(','), compare })}`),
+  analytics: ({ start, end, channels, compare, compareStart, compareEnd }) =>
+    request(
+      `/api/analytics${qs({ start, end, channels: channels?.join(','), compare, compareStart, compareEnd })}`
+    ),
 
   videos: ({ start, end, channels, limit, sort, velocityHours }) =>
     request(
