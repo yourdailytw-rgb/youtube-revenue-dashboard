@@ -62,7 +62,82 @@ router.get('/auth', (req, res) => {
   res.redirect(oauth.generateAuthUrl(req));
 });
 
+// ---------------------------------------------------------------------------
+// Sign in with Google (dashboard login, restricted to an allowlist)
+//
+// Shares the OAuth client and the already-registered /oauth2callback redirect
+// URI with channel connection. The two are told apart by `state`, which for a
+// login is "login:<nonce>" — the nonce is also held in a short-lived HttpOnly
+// cookie and must match, so a forged callback cannot create a session.
+// ---------------------------------------------------------------------------
+
+const LOGIN_SCOPES = ['openid', 'email', 'profile'];
+
+router.get('/auth/login', (req, res) => {
+  if (!config.CLIENT_ID || !config.CLIENT_SECRET) {
+    return res.status(500).send('Google sign-in is not configured on the server.');
+  }
+  const nonce = require('crypto').randomBytes(24).toString('hex');
+  const next = auth.safeNext(req.query.next);
+  const secure = config.RAILWAY_PUBLIC_DOMAIN ? ' Secure;' : '';
+  res.setHeader('Set-Cookie', [
+    `login_nonce=${nonce}; Path=/; HttpOnly;${secure} SameSite=Lax; Max-Age=600`,
+    `login_next=${encodeURIComponent(next)}; Path=/; HttpOnly;${secure} SameSite=Lax; Max-Age=600`,
+  ]);
+  const url = oauth.makeOAuth2Client(req).generateAuthUrl({
+    access_type: 'online',
+    prompt: 'select_account',
+    scope: LOGIN_SCOPES,
+    state: `login:${nonce}`,
+  });
+  res.redirect(url);
+});
+
+async function handleGoogleLogin(req, res) {
+  const cookies = auth.parseCookies(req.headers.cookie);
+  const expected = cookies.login_nonce;
+  const received = String(req.query.state || '').slice('login:'.length);
+  const next = auth.safeNext(cookies.login_next ? decodeURIComponent(cookies.login_next) : '/');
+  const clear = ['login_nonce=; Path=/; Max-Age=0', 'login_next=; Path=/; Max-Age=0'];
+
+  const fail = (message) => {
+    res.setHeader('Set-Cookie', clear);
+    return res.status(403).send(auth.loginPageHTML({ error: true, message, next }));
+  };
+
+  if (!expected || !received || expected !== received) {
+    return fail('Sign-in expired or was not started here — please try again.');
+  }
+  if (req.query.error) return fail('Google sign-in was cancelled.');
+
+  try {
+    const client = oauth.makeOAuth2Client(req);
+    const { tokens: googleTokens } = await client.getToken(req.query.code);
+    const ticket = await client.verifyIdToken({ idToken: googleTokens.id_token, audience: config.CLIENT_ID });
+    const payload = ticket.getPayload() || {};
+
+    if (!payload.email || payload.email_verified !== true) {
+      return fail('That Google account has no verified email address.');
+    }
+    if (!auth.isEmailAllowed(payload.email)) {
+      console.warn(`[login] Refused Google sign-in for ${payload.email} (not on the allowlist)`);
+      return fail(`${payload.email} isn't allowed to access this dashboard.`);
+    }
+
+    const sid = auth.createSession(payload.email.toLowerCase(), req.headers['user-agent']);
+    res.setHeader('Set-Cookie', [auth.sessionCookie(sid), ...clear]);
+    console.log(`[login] Google sign-in: ${payload.email}`);
+    return res.redirect(next);
+  } catch (err) {
+    console.error('[login] Google sign-in failed:', err.message);
+    return fail('Google sign-in failed — please try again.');
+  }
+}
+
 router.get('/oauth2callback', async (req, res) => {
+  // Dashboard sign-in shares this callback with channel connection.
+  if (String(req.query.state || '').startsWith('login:')) return handleGoogleLogin(req, res);
+
   const { code } = req.query;
   if (!code) return res.status(400).send('Missing authorization code');
 
@@ -120,6 +195,26 @@ const api = express.Router();
 api.get('/me', (req, res) => {
   const user = auth.currentUser(req);
   res.json({ user, authRequired: auth.AUTH_REQUIRED, currency: config.CURRENCY });
+});
+
+api.get('/allowed-emails', (req, res) => {
+  res.json(auth.listAllowedEmails());
+});
+
+api.post('/allowed-emails', (req, res) => {
+  try {
+    const me = auth.currentUser(req);
+    const email = auth.addAllowedEmail(req.body?.email, me?.username);
+    res.json({ ok: true, email, emails: auth.listAllowedEmails() });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+api.delete('/allowed-emails/:email', (req, res) => {
+  const removed = auth.removeAllowedEmail(req.params.email);
+  if (!removed) return res.status(404).json({ error: 'Not on the list' });
+  res.json({ ok: true, emails: auth.listAllowedEmails() });
 });
 
 api.get('/channels', (req, res) => {

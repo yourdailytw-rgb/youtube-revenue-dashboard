@@ -42,6 +42,44 @@ function parseUsers() {
 }
 
 const USERS = parseUsers();
+
+/**
+ * Google accounts allowed to sign in. Kept in the database on the Railway
+ * volume rather than in code or env vars: the repository is public, and this
+ * way the list can be managed from the Settings tab without a redeploy.
+ */
+db.exec(`
+CREATE TABLE IF NOT EXISTS allowed_emails (
+  email     TEXT PRIMARY KEY,
+  added_by  TEXT,
+  added_at  TEXT
+);
+`);
+
+const normaliseEmail = (email) => String(email || '').trim().toLowerCase();
+const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+function listAllowedEmails() {
+  return db.prepare('SELECT * FROM allowed_emails ORDER BY added_at').all();
+}
+
+function addAllowedEmail(email, addedBy) {
+  const e = normaliseEmail(email);
+  if (!isValidEmail(e)) throw new Error('Not a valid email address');
+  db.prepare(
+    `INSERT INTO allowed_emails (email, added_by, added_at) VALUES (?, ?, ?)
+     ON CONFLICT(email) DO NOTHING`
+  ).run(e, addedBy || null, new Date().toISOString());
+  return e;
+}
+
+function removeAllowedEmail(email) {
+  return db.prepare('DELETE FROM allowed_emails WHERE email = ?').run(normaliseEmail(email)).changes > 0;
+}
+
+function isEmailAllowed(email) {
+  return Boolean(db.prepare('SELECT 1 FROM allowed_emails WHERE email = ?').get(normaliseEmail(email)));
+}
 const AUTH_REQUIRED = USERS.size > 0 || Boolean(config.DASHBOARD_PASSWORD);
 
 function safeEqual(a = '', b = '') {
@@ -134,7 +172,7 @@ function middleware(req, res, next) {
   return res.redirect(`/login?next=${encodeURIComponent(req.originalUrl || '/')}`);
 }
 
-function loginPageHTML({ error = false, next = '/' } = {}) {
+function loginPageHTML({ error = false, message = null, next = '/' } = {}) {
   const showUserField = USERS.size > 0;
   return `<!doctype html>
 <html lang="en"><head>
@@ -157,6 +195,12 @@ function loginPageHTML({ error = false, next = '/' } = {}) {
   button { width:100%; padding:11px; border:0; border-radius:9px; background:#3b82f6;
     color:#fff; font-size:14px; font-weight:600; cursor:pointer; }
   button:hover { background:#2f74e8; }
+  .google { display:flex; align-items:center; justify-content:center; gap:10px; width:100%;
+    padding:11px; border-radius:9px; border:1px solid #2a3140; background:#fff; color:#1f2937;
+    font-size:14px; font-weight:600; text-decoration:none; }
+  .google:hover { background:#f3f4f6; }
+  .divider { display:flex; align-items:center; gap:10px; margin:18px 0 14px; color:#6b7280; font-size:12px; }
+  .divider::before, .divider::after { content:''; flex:1; height:1px; background:#232936; }
   .error { background:rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.35);
     color:#fca5a5; padding:9px 12px; border-radius:8px; font-size:13px; margin-bottom:16px; }
 </style></head>
@@ -164,7 +208,12 @@ function loginPageHTML({ error = false, next = '/' } = {}) {
   <form class="card" method="POST" action="/login">
     <h1>YouTube Revenue Dashboard</h1>
     <p class="sub">Sign in to continue</p>
-    ${error ? '<div class="error">Incorrect credentials — try again.</div>' : ''}
+    ${error ? `<div class="error">${escapeHtml(message || 'Incorrect credentials — try again.')}</div>` : ''}
+    <a class="google" href="/auth/login?next=${encodeURIComponent(next)}">
+      <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
+      Sign in with Google
+    </a>
+    <div class="divider"><span>or use the password</span></div>
     <input type="hidden" name="next" value="${escapeHtml(next)}">
     ${
       showUserField
@@ -197,6 +246,10 @@ function safeNext(value) {
 }
 
 module.exports = {
+  listAllowedEmails,
+  addAllowedEmail,
+  removeAllowedEmail,
+  isEmailAllowed,
   AUTH_REQUIRED,
   USERS,
   verifyCredentials,

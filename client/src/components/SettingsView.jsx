@@ -70,6 +70,8 @@ export function SettingsView({ channels, onChannelsChanged, onSync, syncing }) {
 
   return (
     <div className="space-y-4">
+      <AccessCard />
+
       <Card>
         <CardHeader
           title="Connected channels"
@@ -294,5 +296,93 @@ export function SettingsView({ channels, onChannelsChanged, onSync, syncing }) {
         </Card>
       </div>
     </div>
+  );
+}
+
+/**
+ * Google accounts allowed to sign in. Stored in the database, not in code, so
+ * it can be changed here without a redeploy and never lands in the public repo.
+ */
+function AccessCard() {
+  const [emails, setEmails] = useState([]);
+  const [draft, setDraft] = useState('');
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => api.allowedEmails().then(setEmails).catch(() => {});
+  useEffect(() => {
+    load();
+  }, []);
+
+  const add = async (e) => {
+    e.preventDefault();
+    if (!draft.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.addAllowedEmail(draft.trim());
+      setEmails(res.emails);
+      setDraft('');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (email) => {
+    if (!window.confirm(`Remove ${email}? They will no longer be able to sign in with Google.`)) return;
+    try {
+      const res = await api.removeAllowedEmail(email);
+      setEmails(res.emails);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader
+        title="Who can sign in"
+        subtitle="Google accounts on this list can sign in with the Google button. The shared password keeps working as well."
+        action={<KeyRound size={15} className="text-ink-dim" />}
+      />
+      <div className="divide-y divide-line-soft">
+        {emails.length === 0 && (
+          <p className="px-4 py-4 text-sm text-ink-dim">No Google accounts added yet.</p>
+        )}
+        {emails.map((row) => (
+          <div key={row.email} className="flex items-center gap-3 px-4 py-2.5">
+            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent/15 text-xs font-semibold text-accent">
+              {row.email[0].toUpperCase()}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm text-ink">{row.email}</p>
+              <p className="truncate text-[11px] text-ink-dim">
+                added {row.added_at ? formatDate(row.added_at.slice(0, 10)) : '—'}
+                {row.added_by ? ` by ${row.added_by}` : ''}
+              </p>
+            </div>
+            <Button size="sm" variant="danger" onClick={() => remove(row.email)} title="Remove access">
+              <Trash2 size={13} />
+            </Button>
+          </div>
+        ))}
+      </div>
+      <form onSubmit={add} className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
+        <input
+          type="email"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="name@gmail.com"
+          className="min-w-0 flex-1 rounded-lg border border-line bg-surface-2 px-3 py-2 text-sm text-ink placeholder:text-ink-dim focus:border-accent/60 focus:outline-none"
+        />
+        <Button size="sm" variant="primary" type="submit" disabled={busy || !draft.trim()}>
+          <Plus size={13} />
+          Add
+        </Button>
+        {error && <p className="w-full text-xs text-neg">{error}</p>}
+      </form>
+    </Card>
   );
 }

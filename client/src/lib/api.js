@@ -35,6 +35,11 @@ const qs = (params) => {
 export const api = {
   me: () => request('/api/me'),
   channels: () => request('/api/channels'),
+  allowedEmails: () => request('/api/allowed-emails'),
+  addAllowedEmail: (email) =>
+    request('/api/allowed-emails', { method: 'POST', body: JSON.stringify({ email }) }),
+  removeAllowedEmail: (email) =>
+    request(`/api/allowed-emails/${encodeURIComponent(email)}`, { method: 'DELETE' }),
   updateChannel: (id, patch) =>
     request(`/api/channels/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   disconnectChannel: (id, purge = false) =>
