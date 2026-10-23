@@ -217,6 +217,8 @@ addColumnIfMissing('videos', 'lifetime_comments', 'INTEGER');
 addColumnIfMissing('daily_metrics', 'engaged_views', 'INTEGER');
 addColumnIfMissing('daily_metrics', 'lf_engaged_views', 'INTEGER');
 addColumnIfMissing('daily_metrics', 'sf_engaged_views', 'INTEGER');
+// The same day's revenue as YouTube reports it in USD — see fxRates().
+addColumnIfMissing('daily_metrics', 'revenue_usd', 'REAL');
 
 // Repeated observations of the same day's views/engagedViews over time.
 // YouTube settles these two metrics at different speeds, so the newest day can
@@ -301,6 +303,7 @@ const DAILY_COLUMNS = [
   'likes',
   'comments',
   'shares',
+  'revenue_usd',
   'revenue_present',
   'views_present',
   'views_source',
@@ -715,6 +718,40 @@ function pruneEngagedObservations(beforeDate) {
   db.prepare('DELETE FROM engaged_observations WHERE date < ?').run(beforeDate);
 }
 
+/**
+ * YouTube's own daily exchange rate: base-currency units per USD, recovered as
+ * sum(revenue) / sum(revenue_usd) across channels for each date. Returns
+ * [{ date, rate }] sorted ascending.
+ */
+function fxRates() {
+  return db
+    .prepare(
+      `SELECT date, SUM(revenue) AS base, SUM(revenue_usd) AS usd
+       FROM daily_metrics
+       WHERE revenue_present = 1 AND revenue > 0 AND revenue_usd > 0
+       GROUP BY date
+       ORDER BY date`
+    )
+    .all()
+    .map((r) => ({ date: r.date, rate: r.base / r.usd }))
+    .filter((r) => Number.isFinite(r.rate) && r.rate > 0);
+}
+
+/** The span of reported days for a channel that still lack a USD figure. */
+function missingUsdSpan(channelId) {
+  return db
+    .prepare(
+      `SELECT MIN(date) AS start, MAX(date) AS end, COUNT(*) AS days
+       FROM daily_metrics
+       WHERE channel_id = ? AND revenue_present = 1 AND revenue_usd IS NULL`
+    )
+    .get(channelId);
+}
+
+function setRevenueUsd(channelId, date, value) {
+  db.prepare('UPDATE daily_metrics SET revenue_usd = ? WHERE channel_id = ? AND date = ?').run(value, channelId, date);
+}
+
 function getCache(key, maxAgeMs) {
   const row = db.prepare('SELECT * FROM video_stats_cache WHERE cache_key = ?').get(key);
   if (!row) return null;
@@ -908,6 +945,9 @@ module.exports = {
   getAllVideos,
   videoVelocityWindows,
   livePace,
+  fxRates,
+  missingUsdSpan,
+  setRevenueUsd,
   getChannelVideoSnapshots,
   recordEngagedObservation,
   engagedSettling,

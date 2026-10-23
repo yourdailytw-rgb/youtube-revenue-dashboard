@@ -11,6 +11,7 @@ const tokens = require('./tokens');
 const oauth = require('./oauth');
 const youtube = require('./youtube');
 const analytics = require('./analytics');
+const fxlib = require('./fx');
 const livecounts = require('./livecounts');
 const trending = require('./trending');
 const sync = require('./sync');
@@ -194,7 +195,7 @@ const api = express.Router();
 
 api.get('/me', (req, res) => {
   const user = auth.currentUser(req);
-  res.json({ user, authRequired: auth.AUTH_REQUIRED, currency: config.CURRENCY });
+  res.json({ user, authRequired: auth.AUTH_REQUIRED, currency: config.CURRENCY, currencies: fxlib.SUPPORTED });
 });
 
 api.get('/allowed-emails', (req, res) => {
@@ -301,7 +302,8 @@ api.get('/analytics', (req, res) => {
   }
 
   const channels = db.listChannels().filter((c) => channelIds.includes(c.id));
-  const series = analytics.buildSeries({ channelIds, start, end });
+  const fx = fxlib.converter(req.query.currency);
+  const series = analytics.buildSeries({ channelIds, start, end, fx });
   const summary = analytics.summarize(series.totals);
 
   let comparison = null;
@@ -314,7 +316,7 @@ api.get('/analytics', (req, res) => {
         : compareMode === 'year'
           ? analytics.previousYearPeriod(start, end)
           : analytics.previousPeriod(start, end);
-    previousSeries = analytics.buildSeries({ channelIds, start: prevRange.start, end: prevRange.end });
+    previousSeries = analytics.buildSeries({ channelIds, start: prevRange.start, end: prevRange.end, fx });
     const prevSummary = analytics.summarize(previousSeries.totals);
     perDay = analytics.shouldComparePerDay(summary, prevSummary);
     comparison = {
@@ -335,12 +337,13 @@ api.get('/analytics', (req, res) => {
   // local SQLite so the extra span costs almost nothing.
   const bounds = db.dataBounds();
   const wideStart = bounds?.min || addDays(start, -365);
-  const wide = analytics.buildSeries({ channelIds, start: wideStart, end: maxDate(end, today()) });
+  const wide = analytics.buildSeries({ channelIds, start: wideStart, end: maxDate(end, today()), fx });
 
   res.json({
     range: { start, end, days: diffDays(start, end) + 1 },
     dataRange: bounds,
-    currency: config.CURRENCY,
+    currency: fx.currency,
+    fx: fxlib.describe(fx),
     channels: channels.map((c) => ({
       id: c.id,
       title: c.custom_name || c.title,
@@ -375,7 +378,35 @@ function cropSeries(rows, start, end) {
 }
 
 /** Detailed estimator diagnostics for one channel (or all). */
+/** Express an estimator result in the display currency, day by day. */
+function convertEstimateResult(fx, result) {
+  if (fx.identity) return result;
+  const f = (date) => fx.factorFor(date);
+  return {
+    ...result,
+    currency: fx.currency,
+    estimates: result.estimates.map((e) => ({
+      ...e,
+      revenue: e.revenue * f(e.date),
+      low: e.low * f(e.date),
+      high: e.high * f(e.date),
+      lfRpm: e.lfRpm * f(e.date),
+      sfRpm: e.sfRpm * f(e.date),
+      reportedRevenue: e.reportedRevenue != null ? e.reportedRevenue * f(e.date) : null,
+    })),
+    accuracy: {
+      ...result.accuracy,
+      recent: (result.accuracy?.recent || []).map((r) => ({
+        ...r,
+        actual: r.actual * f(r.date),
+        predicted: r.predicted * f(r.date),
+      })),
+    },
+  };
+}
+
 api.get('/estimates', (req, res) => {
+  const fx = fxlib.converter(req.query.currency);
   const connected = tokens.loadTokens();
   const ids = req.query.channel ? [req.query.channel] : Object.keys(connected);
   const out = {};
@@ -388,7 +419,8 @@ api.get('/estimates', (req, res) => {
     const result = estimateChannel(history);
     out[id] = {
       channelTitle: connected[id].channelTitle,
-      ...result,
+      ...convertEstimateResult(fx, result),
+      currency: fx.currency,
     };
   }
   res.json(out);
@@ -411,7 +443,8 @@ api.get('/videos', async (req, res) => {
   const limit = Math.min(100, Math.max(5, Number(req.query.limit) || 40));
   const velocityHours = Math.min(168, Math.max(1, Number(req.query.velocityHours) || 24));
 
-  const cacheKey = `videos:v2:${channelIds.join('|')}:${start}:${end}:${limit}`;
+  const currency = fxlib.normalise(req.query.currency);
+  const cacheKey = `videos:v3:${currency}:${channelIds.join('|')}:${start}:${end}:${limit}`;
   const cached = db.getCache(cacheKey, 30 * 60 * 1000);
 
   let payload = cached;
@@ -426,6 +459,7 @@ api.get('/videos', async (req, res) => {
       try {
         const client = oauth.clientForChannel(channelId, tokenData);
         const pool = await youtube.fetchVideoRankingPool({
+          currency,
           auth: client,
           channelId,
           start,
@@ -535,6 +569,7 @@ api.get('/videos', async (req, res) => {
 
   res.json({
     range: payload.range,
+    currency,
     sort: sortKey,
     availableSorts: Object.keys(SORTS),
     velocityHours,
@@ -557,7 +592,8 @@ api.get('/export', (req, res) => {
   const { start, end, channelIds } = range;
   const scope = req.query.scope === 'channel' ? 'channel' : 'total';
 
-  const series = analytics.buildSeries({ channelIds, start, end });
+  const fx = fxlib.converter(req.query.currency);
+  const series = analytics.buildSeries({ channelIds, start, end, fx });
   const channels = new Map(db.listChannels().map((c) => [c.id, c.custom_name || c.title]));
 
   const header = [
@@ -608,7 +644,7 @@ api.get('/export', (req, res) => {
   }
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="youtube-${scope}-${start}_${end}.csv"`);
+  res.setHeader('Content-Disposition', `attachment; filename="youtube-${scope}-${start}_${end}-${fx.currency}.csv"`);
   res.send(lines.join('\n'));
 });
 

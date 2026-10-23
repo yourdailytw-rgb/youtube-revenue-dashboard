@@ -3,7 +3,18 @@ import { RefreshCw, Plus, LogOut, Zap, AlertTriangle } from 'lucide-react';
 import { Button, Badge } from './ui';
 import { relativeTime, formatDate } from '../lib/format';
 
-export function Header({ user, sync, estimation, onSync, syncing, tokenIssues }) {
+export function Header({
+  user,
+  sync,
+  estimation,
+  onSync,
+  syncing,
+  tokenIssues,
+  currency = 'SEK',
+  onCurrencyChange,
+  currencyPending = false,
+  usdUnavailable = false,
+}) {
   const delay = estimation?.delayDays;
 
   return (
@@ -46,6 +57,15 @@ export function Header({ user, sync, estimation, onSync, syncing, tokenIssues })
             </Badge>
           )}
 
+          {onCurrencyChange && (
+            <CurrencyToggle
+              value={currency}
+              onChange={onCurrencyChange}
+              pending={currencyPending}
+              unavailable={usdUnavailable}
+            />
+          )}
+
           <Button size="sm" onClick={onSync} disabled={syncing} title="Pull the latest data from YouTube">
             <RefreshCw size={13} className={clsx(syncing && 'animate-spin')} />
             <span className="hidden sm:inline">{syncing ? 'Syncing…' : 'Sync'}</span>
@@ -69,5 +89,56 @@ export function Header({ user, sync, estimation, onSync, syncing, tokenIssues })
         </div>
       </div>
     </header>
+  );
+}
+
+/**
+ * SEK / USD switch. Converts every revenue figure on the dashboard — totals,
+ * charts, RPM, CPM, estimates, forecasts, video earnings and CSV exports — at
+ * YouTube's own exchange rate for each day.
+ */
+function CurrencyToggle({ value, onChange, pending, unavailable }) {
+  const options = [
+    { id: 'SEK', label: 'kr', title: 'Swedish kronor' },
+    { id: 'USD', label: '$', title: "US dollars, at YouTube's daily exchange rate" },
+  ];
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Currency"
+      title={
+        unavailable
+          ? 'USD exchange rates are still being collected from YouTube — showing SEK until they arrive.'
+          : 'Show revenue in SEK or USD'
+      }
+      className={clsx(
+        'relative inline-flex items-center gap-0.5 rounded-lg border bg-surface p-0.5',
+        unavailable ? 'border-warn/50' : 'border-line'
+      )}
+    >
+      {options.map((opt) => {
+        const active = value === opt.id;
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            title={opt.title}
+            onClick={() => !active && onChange(opt.id)}
+            className={clsx(
+              'inline-flex min-w-[44px] items-center justify-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition-colors',
+              active ? 'bg-accent text-white' : 'text-ink-dim hover:bg-surface-2 hover:text-ink'
+            )}
+          >
+            <span>{opt.label}</span>
+            <span className={clsx('text-[10px] font-medium', active ? 'text-white/80' : 'text-ink-dim')}>
+              {opt.id}
+            </span>
+            {active && pending && <RefreshCw size={10} className="animate-spin" />}
+          </button>
+        );
+      })}
+    </div>
   );
 }

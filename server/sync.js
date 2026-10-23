@@ -94,6 +94,34 @@ async function syncChannel(channelId, tokenData, { full = false } = {}) {
   return { channelId, days: rows.length, errors };
 }
 
+/**
+ * Fill in the USD revenue figure for reported days that predate USD collection.
+ * One query per 180 days of history, once per channel; afterwards the regular
+ * sync keeps it current and this finds nothing to do.
+ */
+async function backfillUsdRevenue(channelId, tokenData) {
+  if (tokenData.mock) return { filled: 0 };
+  const span = db.missingUsdSpan(channelId);
+  if (!span || !span.days) return { filled: 0 };
+
+  const auth = clientForChannel(channelId, tokenData);
+  const usd = await youtube.fetchUsdRevenue({ auth, channelId, start: span.start, end: span.end });
+  let filled = 0;
+  db.db.exec('BEGIN');
+  try {
+    for (const [date, value] of usd) {
+      db.setRevenueUsd(channelId, date, value);
+      filled++;
+    }
+    db.db.exec('COMMIT');
+  } catch (err) {
+    db.db.exec('ROLLBACK');
+    throw err;
+  }
+  console.log(`[fx] ${tokenData.channelTitle || channelId}: backfilled USD revenue for ${filled} day(s)`);
+  return { filled };
+}
+
 /** Recompute estimates for one channel from its recent history. */
 function recomputeChannelEstimates(channelId) {
   const start = addDays(today(), -ESTIMATOR_HISTORY_DAYS);
@@ -161,6 +189,13 @@ async function syncAll({ full = false } = {}) {
     for (const [channelId, tokenData] of Object.entries(allTokens)) {
       try {
         results.push(await syncChannel(channelId, tokenData, { full }));
+        // Exchange-rate history for the USD view. Best-effort: a failure here
+        // must never fail the sync itself.
+        try {
+          await backfillUsdRevenue(channelId, tokenData);
+        } catch (err) {
+          console.warn(`[fx] ${tokenData.channelTitle || channelId}: USD backfill failed — ${err.message}`);
+        }
       } catch (err) {
         console.error(`[sync] ${tokenData.channelTitle || channelId}: FAILED — ${err.message}`);
         channelHealth[channelId] = {

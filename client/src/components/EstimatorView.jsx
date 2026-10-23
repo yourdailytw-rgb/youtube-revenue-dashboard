@@ -14,7 +14,7 @@ import clsx from 'clsx';
 import { Zap, Info, ShieldCheck, ChevronDown, Radio } from 'lucide-react';
 import { Card, CardHeader, Badge, Stat, EmptyState, Skeleton, ChannelAvatar } from './ui';
 import { api } from '../lib/api';
-import { formatMoney, formatDate, formatPct, formatNumber } from '../lib/format';
+import { setCurrency, formatMoney, formatDate, formatPct, formatNumber } from '../lib/format';
 import { channelColor } from '../lib/metrics';
 
 /**
@@ -24,7 +24,7 @@ import { channelColor } from '../lib/metrics';
  *
  * The point of this tab is that nobody has to take the estimate on faith.
  */
-export function EstimatorView({ data }) {
+export function EstimatorView({ data, currency = 'SEK' }) {
   const [detail, setDetail] = useState(null);
   const [live, setLive] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -34,7 +34,7 @@ export function EstimatorView({ data }) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    Promise.all([api.estimates(), api.liveStatus().catch(() => null)])
+    Promise.all([api.estimates(undefined, currency), api.liveStatus().catch(() => null)])
       .then(([est, liveStatus]) => {
         if (cancelled) return;
         setDetail(est);
@@ -45,7 +45,7 @@ export function EstimatorView({ data }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [currency]);
 
   if (loading) {
     return (
@@ -65,6 +65,9 @@ export function EstimatorView({ data }) {
   }
 
   const channels = Object.entries(detail || {});
+  // Format in the currency the estimates were returned in.
+  const detailCurrency = channels[0]?.[1]?.currency;
+  if (detailCurrency) setCurrency(detailCurrency);
   const totalEstimated = channels.reduce(
     (sum, [, c]) => sum + (c.estimates || []).reduce((a, e) => a + e.revenue, 0),
     0

@@ -45,17 +45,17 @@ export const api = {
   disconnectChannel: (id, purge = false) =>
     request(`/api/channels/${id}${qs({ purge })}`, { method: 'DELETE' }),
 
-  analytics: ({ start, end, channels, compare, compareStart, compareEnd }) =>
+  analytics: ({ start, end, channels, compare, compareStart, compareEnd, currency }) =>
     request(
-      `/api/analytics${qs({ start, end, channels: channels?.join(','), compare, compareStart, compareEnd })}`
+      `/api/analytics${qs({ start, end, channels: channels?.join(','), compare, compareStart, compareEnd, currency })}`
     ),
 
-  videos: ({ start, end, channels, limit, sort, velocityHours }) =>
+  videos: ({ start, end, channels, limit, sort, velocityHours, currency }) =>
     request(
-      `/api/videos${qs({ start, end, channels: channels?.join(','), limit, sort, velocityHours })}`
+      `/api/videos${qs({ start, end, channels: channels?.join(','), limit, sort, velocityHours, currency })}`
     ),
 
-  estimates: (channel) => request(`/api/estimates${qs({ channel })}`),
+  estimates: (channel, currency) => request(`/api/estimates${qs({ channel, currency })}`),
 
   syncStatus: () => request('/api/sync/status'),
   liveStatus: () => request('/api/live-status'),
@@ -70,6 +70,6 @@ export const api = {
   tokenHealth: () => request('/api/token-health'),
   storageStatus: () => request('/api/admin/storage-status'),
 
-  exportUrl: ({ start, end, channels, scope = 'total' }) =>
-    `/api/export${qs({ start, end, channels: channels?.join(','), scope })}`,
+  exportUrl: ({ start, end, channels, scope = 'total', currency }) =>
+    `/api/export${qs({ start, end, channels: channels?.join(','), scope, currency })}`,
 };

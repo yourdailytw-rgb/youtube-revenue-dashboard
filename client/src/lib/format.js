@@ -5,9 +5,17 @@
 
 const LOCALE = 'sv-SE';
 
-let currencySuffix = 'kr';
+/**
+ * Display currency. Set from the currency the loaded DATA is in (not from the
+ * button), so figures are never shown with the wrong symbol while a switch is
+ * still loading.
+ */
+let currency = 'SEK';
 export function setCurrency(code) {
-  currencySuffix = code === 'SEK' ? 'kr' : code;
+  currency = code === 'USD' ? 'USD' : 'SEK';
+}
+export function getCurrency() {
+  return currency;
 }
 
 const nf = (min, max) => new Intl.NumberFormat(LOCALE, { minimumFractionDigits: min, maximumFractionDigits: max });
@@ -17,16 +25,38 @@ const money0 = nf(0, 0);
 const int0 = nf(0, 0);
 const dec1 = nf(1, 1);
 
+// Dollars are written the way they are read: $12,345.67.
+const usd = (digits) =>
+  new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+const usd2 = usd(2);
+const usd0 = usd(0);
+const usdDec1 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const usdInt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+
 export function formatMoney(value, { decimals = 2, suffix = true } = {}) {
   if (value === null || value === undefined || !Number.isFinite(value)) return '—';
+  if (currency === 'USD') {
+    if (!suffix) return (decimals === 0 ? usdInt : new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })).format(value);
+    return (decimals === 0 ? usd0 : usd2).format(value);
+  }
   const formatted = decimals === 0 ? money0.format(value) : money2.format(value);
-  return suffix ? `${formatted} ${currencySuffix}` : formatted;
+  return suffix ? `${formatted} kr` : formatted;
 }
 
-/** Compact money for chart axes: 12,4k kr */
+/** Compact money for chart axes: 12,4k (SEK) or $12.4k (USD). */
 export function formatMoneyShort(value) {
   if (value === null || value === undefined || !Number.isFinite(value)) return '—';
   const abs = Math.abs(value);
+  if (currency === 'USD') {
+    if (abs >= 1_000_000) return `$${usdDec1.format(value / 1_000_000)}M`;
+    if (abs >= 1_000) return `$${usdDec1.format(value / 1_000)}k`;
+    return `$${usdInt.format(value)}`;
+  }
   if (abs >= 1_000_000) return `${dec1.format(value / 1_000_000)}M`;
   if (abs >= 1_000) return `${dec1.format(value / 1_000)}k`;
   return money0.format(value);

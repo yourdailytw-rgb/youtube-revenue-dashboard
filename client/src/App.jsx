@@ -88,7 +88,25 @@ function readUrlState() {
     // written back, so a plain reload returns to the previous-period default.
     ...readCompare(params),
     metric: params.get('metric') || 'revenue',
+    currency: readCurrency(params),
   };
+}
+
+/**
+ * Display currency: an explicit ?currency= in the URL wins (so a USD view can
+ * be shared), then this browser's last choice, then SEK. The choice is a
+ * per-viewer preference, so it lives in localStorage rather than on the server.
+ */
+function readCurrency(params) {
+  const fromUrl = (params.get('currency') || '').toUpperCase();
+  if (fromUrl === 'USD' || fromUrl === 'SEK') return fromUrl;
+  try {
+    const saved = window.localStorage.getItem('dashboard.currency');
+    if (saved === 'USD' || saved === 'SEK') return saved;
+  } catch {
+    /* storage unavailable — fall through */
+  }
+  return 'SEK';
 }
 
 /**
@@ -103,6 +121,7 @@ function writeUrlState(state) {
   params.set('compare', state.compare);
   if (state.compare === 'month' && state.compareMonth) params.set('compareMonth', state.compareMonth);
   params.set('metric', state.metric);
+  if (state.currency && state.currency !== 'SEK') params.set('currency', state.currency);
   if (state.channels.length) params.set('channels', state.channels.join(','));
   window.history.replaceState(null, '', `?${params.toString()}`);
 }
@@ -136,13 +155,20 @@ export default function App() {
 
   useEffect(() => writeUrlState(state), [state]);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('dashboard.currency', state.currency);
+    } catch {
+      /* private mode etc. — the URL still carries it */
+    }
+  }, [state.currency]);
+
   // One-time bootstrap.
   useEffect(() => {
     api
       .me()
       .then((res) => {
         setMe(res.user);
-        setCurrency(res.currency);
       })
       .catch(() => {});
 
@@ -176,6 +202,7 @@ export default function App() {
         channels: state.channels,
         compare: state.compare,
         ...comparisonParams(state),
+        currency: state.currency,
       });
       setData(res);
     } catch (err) {
@@ -183,7 +210,7 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [state.start, state.end, state.channels, state.compare, state.compareMonth, state.compareStart, state.compareEnd]);
+  }, [state.start, state.end, state.channels, state.compare, state.compareMonth, state.compareStart, state.compareEnd, state.currency]);
 
   useEffect(() => {
     loadAnalytics();
@@ -280,15 +307,24 @@ export default function App() {
     end: state.end,
     channels: state.channels,
     scope: 'total',
+    currency: state.currency,
   });
   const channelExportUrl = api.exportUrl({
     start: state.start,
     end: state.end,
     channels: state.channels,
     scope: 'channel',
+    currency: state.currency,
   });
 
   const noChannels = channels.length === 0;
+
+  // Formatting follows the data, not the button: while a switch is loading, the
+  // previous figures stay on screen in their own currency instead of being
+  // relabelled with the new symbol.
+  if (data?.currency) setCurrency(data.currency);
+  const shownCurrency = data?.currency || 'SEK';
+  const usdUnavailable = state.currency === 'USD' && data?.fx && !data.fx.available;
 
   return (
     <div className="min-h-full">
@@ -299,6 +335,10 @@ export default function App() {
         onSync={() => runSync(false)}
         syncing={syncing || data?.sync?.running}
         tokenIssues={tokenIssues}
+        currency={state.currency}
+        onCurrencyChange={(currency) => patch({ currency })}
+        currencyPending={loading && state.currency !== shownCurrency}
+        usdUnavailable={usdUnavailable}
       />
 
       {connectedToast && (
@@ -477,6 +517,7 @@ export default function App() {
                 range={{ start: state.start, end: state.end }}
                 channels={state.channels}
                 allChannels={channels}
+                currency={state.currency}
               />
             )}
 
@@ -491,7 +532,7 @@ export default function App() {
               <TrendingView channels={state.channels} allChannels={channels} />
             )}
 
-            {state.tab === 'estimator' && <EstimatorView data={data} />}
+            {state.tab === 'estimator' && <EstimatorView data={data} currency={state.currency} />}
 
             {state.tab === 'settings' && (
               <SettingsView
@@ -508,8 +549,12 @@ export default function App() {
         )}
 
         <footer className="pt-2 text-center text-[11px] text-ink-dim">
-          Revenue in {data?.currency || 'SEK'} · reported figures come from the YouTube Analytics API ·
-          modelled days are marked in purple everywhere they appear
+          Revenue in {shownCurrency}
+          {shownCurrency === 'USD' && data?.fx?.latestRate && (
+            <> at YouTube's own daily exchange rate (latest {data.fx.latestRate.rate.toFixed(2)} kr/$)</>
+          )}
+          {' '}· reported figures come from the YouTube Analytics API · modelled days are marked in purple
+          everywhere they appear
         </footer>
       </main>
     </div>

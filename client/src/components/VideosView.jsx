@@ -13,6 +13,7 @@ import {
 import { Card, CardHeader, Badge, EmptyState, Skeleton, Tabs, Stat } from './ui';
 import { api } from '../lib/api';
 import {
+  setCurrency,
   formatMoney,
   formatNumber,
   formatNumberShort,
@@ -122,7 +123,7 @@ const RANKINGS = [
 
 const GROUPS = ['Money', 'Reach', 'Momentum', 'Engagement'];
 
-export function VideosView({ range, channels, allChannels = [] }) {
+export function VideosView({ range, channels, allChannels = [], currency = 'SEK' }) {
   const [state, setState] = useState({ loading: true, videos: [] });
   const [sort, setSort] = useState('revenue');
   const [filter, setFilter] = useState('all');
@@ -139,13 +140,14 @@ export function VideosView({ range, channels, allChannels = [] }) {
         limit: 60,
         sort,
         velocityHours,
+        currency,
       })
       .then((res) => !cancelled && setState({ loading: false, ...res }))
       .catch((err) => !cancelled && setState({ loading: false, videos: [], error: err.message }));
     return () => {
       cancelled = true;
     };
-  }, [range.start, range.end, channels?.join(','), sort, velocityHours]);
+  }, [range.start, range.end, channels?.join(','), sort, velocityHours, currency]);
 
   // Live combined pace, polled independently of the ranking so the headline
   // figure keeps moving without a reload. It covers EVERY tracked video, not
@@ -210,7 +212,12 @@ export function VideosView({ range, channels, allChannels = [] }) {
 
   const maxValue = Math.max(...videos.map((v) => Number(v[active.field]) || 0), 1);
 
-  if (state.loading && !state.videos?.length) {
+  // Never show the previous currency's figures under the new symbol: while a
+  // switch is loading, show the skeleton instead.
+  const staleCurrency = state.currency && state.currency !== currency;
+  if (state.currency && !staleCurrency) setCurrency(state.currency);
+
+  if (state.loading && (!state.videos?.length || staleCurrency)) {
     return (
       <div className="space-y-3">
         <Skeleton className="h-24" />

@@ -150,6 +150,23 @@ async function fetchDailyMetrics({ auth, channelId, start, end, currency = confi
       errors.push({ query: 'revenue', message: err.message });
     }
 
+    // --- Revenue again, in USD ------------------------------------------------
+    // YouTube converts every channel's revenue at one rate per day (verified:
+    // the implied rate agrees across channels to 0.002%). Storing the USD figure
+    // alongside SEK recovers that exact rate, so a USD view of the dashboard
+    // matches YouTube Studio rather than a third-party exchange-rate feed.
+    if (currency !== 'USD') {
+      try {
+        const { rows } = await queryReport(auth, { ...base, ...range, currency: 'USD' }, ['estimatedRevenue']);
+        for (const r of rows) {
+          const v = num(r.estimatedRevenue);
+          if (v !== null) touch(r.day).revenue_usd = v;
+        }
+      } catch (err) {
+        errors.push({ query: 'revenue-usd', message: err.message });
+      }
+    }
+
     // --- Core engagement metrics ------------------------------------------
     try {
       const { rows } = await queryReport(auth, { ...base, ...range }, CORE_METRICS);
@@ -217,6 +234,23 @@ async function fetchDailyMetrics({ auth, channelId, start, end, currency = confi
   }
 
   return { byDate, errors };
+}
+
+/** USD revenue for a range, used to backfill exchange rates for history. */
+async function fetchUsdRevenue({ auth, channelId, start, end }) {
+  const out = new Map();
+  for (const chunk of chunkRange(start, end)) {
+    const { rows } = await queryReport(
+      auth,
+      { ids: `channel==${channelId}`, dimensions: 'day', sort: 'day', startDate: chunk.start, endDate: chunk.end, currency: 'USD' },
+      ['estimatedRevenue']
+    );
+    for (const r of rows) {
+      const v = num(r.estimatedRevenue);
+      if (v !== null) out.set(r.day, v);
+    }
+  }
+  return out;
 }
 
 /** Top videos for a range, sorted by revenue (falls back to views). */
@@ -356,6 +390,7 @@ module.exports = {
   CONTENT_TYPE_SHORTS,
   chunkRange,
   fetchDailyMetrics,
+  fetchUsdRevenue,
   fetchTopVideos,
   fetchVideoRankingPool,
   fetchVideoDetails,

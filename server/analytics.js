@@ -10,6 +10,7 @@
  */
 
 const db = require('./db');
+const fxlib = require('./fx');
 const {
   eachDay,
   monthKey,
@@ -139,9 +140,14 @@ function finalizeDay(day) {
  * Build a continuous daily series (no gaps) for a set of channels.
  * `perChannel` also returns each channel's own series.
  */
-function buildSeries({ channelIds, start, end, includeEstimates = true, includeLiveViews = true }) {
-  const rows = db.getDaily(channelIds, start, end);
-  const estimates = includeEstimates ? db.getEstimates(channelIds, start, end) : [];
+function buildSeries({ channelIds, start, end, includeEstimates = true, includeLiveViews = true, fx = null }) {
+  // Money is converted per day, at that day's rate, BEFORE aggregation — so
+  // every total, average, RPM, CPM, comparison and forecast built from this
+  // series comes out in the display currency without further handling.
+  const rows = db.getDaily(channelIds, start, end).map((r) => fxlib.convertRow(fx, r));
+  const estimates = includeEstimates
+    ? db.getEstimates(channelIds, start, end).map((e) => fxlib.convertEstimate(fx, e))
+    : [];
   const liveRows = includeLiveViews ? db.getLiveDaily(channelIds, start, end) : [];
 
   // Days Analytics has already reported, so live-derived views for those days
