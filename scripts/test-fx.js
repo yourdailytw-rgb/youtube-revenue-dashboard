@@ -122,6 +122,24 @@ test('SEK is the identity — nothing changes', () => {
   assert.strictEqual(analytics.summarize(a.totals).revenue, analytics.summarize(b.totals).revenue);
 });
 
+test('per channel, USD equals that channel\'s own USD even when SEK was revised', () => {
+  // Simulate a revision: channel UCa's stored SEK drifted after its USD was
+  // fetched (what happened to September 2026). Its own rate must still win.
+  db.upsertDaily('UCa', '2026-10-03', { revenue: 3020 }); // was 3000; USD unchanged
+  const c = fx.converter('USD');
+  const day = analytics.buildSeries({ channelIds: ['UCa'], start: '2026-10-03', end: '2026-10-03', fx: c }).totals[0];
+  const storedUsd = Math.round((3000 / RATES['2026-10-03']) * 100) / 100;
+  assert.ok(Math.abs(day.revenue - storedUsd) < 1e-9, `got ${day.revenue}, YouTube's USD ${storedUsd}`);
+  db.upsertDaily('UCa', '2026-10-03', { revenue: 3000 }); // restore
+});
+
+test('a row whose own rate is implausible falls back to the day rate', () => {
+  db.upsertDaily('UCb', '2026-10-04', { revenue_usd: 1 }); // corrupt: would imply ~4235 SEK/USD
+  const c = fx.converter('USD');
+  const day = analytics.buildSeries({ channelIds: ['UCb'], start: '2026-10-04', end: '2026-10-04', fx: c }).totals[0];
+  assert.ok(day.revenue > 300, `fell for the corrupt row: ${day.revenue}`);
+});
+
 test('unknown currency codes fall back to the base currency', () => {
   assert.strictEqual(fx.converter('EUR').currency, 'SEK');
   assert.strictEqual(fx.converter(undefined).currency, 'SEK');

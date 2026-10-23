@@ -15,7 +15,7 @@ const { clientForChannel, isExpiredError } = require('./oauth');
 const youtube = require('./youtube');
 const livecounts = require('./livecounts');
 const { estimateChannel } = require('./estimator');
-const { today, addDays, maxISO } = require('./util/dates');
+const { today, addDays, maxISO, minISO, startOfMonth } = require('./util/dates');
 
 let running = false;
 let lastRun = null;
@@ -40,9 +40,17 @@ async function syncChannel(channelId, tokenData, { full = false } = {}) {
   const end = today();
   const backfilledThrough = db.getState(`backfill:${channelId}`);
 
+  // YouTube keeps revising a month's revenue well into the next month (seen in
+  // October 2026: September was still moving by up to 127 kr per channel three
+  // weeks later). So the refresh always reaches back to the 1st of the previous
+  // month, and never less than SYNC_REFRESH_DAYS. It is still one report query
+  // per metric family — the window is far inside the 180-day chunk — so this
+  // costs rows, not API calls.
+  const previousMonthStart = startOfMonth(addDays(startOfMonth(end), -1));
+  const refreshFrom = minISO(addDays(end, -config.SYNC_REFRESH_DAYS), previousMonthStart);
   const start = full || !backfilledThrough
     ? config.BACKFILL_START
-    : maxISO(addDays(end, -config.SYNC_REFRESH_DAYS), config.BACKFILL_START);
+    : maxISO(refreshFrom, config.BACKFILL_START);
 
   const label = tokenData.channelTitle || channelId;
   console.log(`[sync] ${label}: fetching ${start} → ${end}${full || !backfilledThrough ? ' (backfill)' : ''}`);

@@ -724,17 +724,44 @@ function pruneEngagedObservations(beforeDate) {
  * [{ date, rate }] sorted ascending.
  */
 function fxRates() {
-  return db
+  const rows = db
     .prepare(
-      `SELECT date, SUM(revenue) AS base, SUM(revenue_usd) AS usd
+      `SELECT date, revenue AS base, revenue_usd AS usd
        FROM daily_metrics
        WHERE revenue_present = 1 AND revenue > 0 AND revenue_usd > 0
-       GROUP BY date
        ORDER BY date`
     )
-    .all()
-    .map((r) => ({ date: r.date, rate: r.base / r.usd }))
-    .filter((r) => Number.isFinite(r.rate) && r.rate > 0);
+    .all();
+  const byDate = new Map();
+  for (const r of rows) {
+    if (!byDate.has(r.date)) byDate.set(r.date, []);
+    byDate.get(r.date).push(r);
+  }
+  // Every channel shares the day's rate, and the rate moves about 1% a week, so
+  // a row far from the median of the surrounding week is a stale or bad figure,
+  // not a different rate. (A week, not just the day: with two channels a day's
+  // own median can't tell which one is wrong.) Leave those out; the rest are
+  // summed, which averages away YouTube's rounding to the cent.
+  const dates = [...byDate.keys()];
+  const out = [];
+  dates.forEach((date, i) => {
+    const group = byDate.get(date);
+    const own = dates
+      .slice(Math.max(0, i - 3), i + 4)
+      .flatMap((d) => byDate.get(d).map((r) => r.base / r.usd))
+      .sort((a, b) => a - b);
+    const median = own[own.length >> 1];
+    let base = 0;
+    let usd = 0;
+    for (const r of group) {
+      if (Math.abs(r.base / r.usd / median - 1) > 0.05) continue;
+      base += r.base;
+      usd += r.usd;
+    }
+    const rate = base / usd;
+    if (Number.isFinite(rate) && rate > 0) out.push({ date, rate });
+  });
+  return out;
 }
 
 /** The span of reported days for a channel that still lack a USD figure. */

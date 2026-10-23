@@ -81,10 +81,21 @@ function converter(requested) {
   };
 }
 
-/** Convert a daily_metrics row's money fields; returns the row unchanged when identity. */
+/**
+ * Convert a daily_metrics row's money fields; returns the row unchanged when
+ * identity.
+ *
+ * A reported row carries its own USD figure, so its own rate (USD / SEK) is
+ * used — that makes each channel's USD exactly YouTube's, even if the SEK and
+ * USD figures for that row were fetched on different days and YouTube revised
+ * the day in between. The day-wide rate is the fallback, and also the guard: a
+ * row whose own rate strays more than 5% from it is treated as bad data.
+ */
 function convertRow(fx, row) {
   if (!fx || fx.identity) return row;
-  const f = fx.factorFor(row.date);
+  const daily = fx.factorFor(row.date);
+  const own = row.revenue > 0 && row.revenue_usd > 0 ? row.revenue_usd / row.revenue : null;
+  const f = own !== null && Math.abs(own / daily - 1) <= 0.05 ? own : daily;
   const out = { ...row };
   for (const k of MONEY_FIELDS) {
     if (typeof out[k] === 'number') out[k] *= f;
