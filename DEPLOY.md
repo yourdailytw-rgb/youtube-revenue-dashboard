@@ -72,6 +72,20 @@ Existing v1 variables all still apply and need no changes:
 
 Leave `DASHBOARD_PASSWORD` in place as a fallback; both work simultaneously.
 
+**Optional — read-only access for Jarvis:**
+
+| Variable | Value |
+|---|---|
+| `JARVIS_READ_KEY` | 32+ random characters (Jarvis gives you the value; paste it in Railway → your service → Variables) |
+
+Jarvis, Lucky's AI chief of staff, reads revenue (reported and estimated), views,
+RPM and per-video data with `Authorization: Bearer <key>`. The key works without
+a login but **only** for `GET` on `/api/analytics`, `/api/videos`,
+`/api/channels`, `/api/estimates`, `/api/live-pace`, `/api/live-status` and
+`/api/sync/status`. Anything else that carries it (tokens, admin routes, the
+email allowlist, CSV export, every write) is refused. Leave it empty and nothing
+changes. To revoke it, change or delete the variable.
+
 **Confirm the Volume is still mounted at `/data`.** Both `tokens.json` and the
 new `metrics.db` live there. Without it, every deploy wipes tokens *and* all
 cached history. The Settings tab shows a red banner if it is missing.

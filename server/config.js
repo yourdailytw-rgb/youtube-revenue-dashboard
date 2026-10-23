@@ -57,6 +57,8 @@ const config = {
 
   DASHBOARD_PASSWORD: process.env.DASHBOARD_PASSWORD,
   DASHBOARD_USERS: process.env.DASHBOARD_USERS,
+  // Read-only key for Jarvis (see auth.js). Unset or under 32 characters: off.
+  JARVIS_READ_KEY: process.env.JARVIS_READ_KEY,
 
   RAILWAY_API_TOKEN: process.env.RAILWAY_API_TOKEN,
   RAILWAY_SERVICE_ID: process.env.RAILWAY_SERVICE_ID,

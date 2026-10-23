@@ -161,7 +161,48 @@ function currentUser(req) {
 /** Paths reachable without logging in. */
 const OPEN_PATHS = ['/login', '/logout', '/auth', '/oauth2callback', '/healthz'];
 
+/**
+ * Read-only access for Jarvis (Lucky's AI chief of staff), without a session:
+ * `Authorization: Bearer <JARVIS_READ_KEY>` reaches only the GET routes below
+ * (revenue, views, RPM, per-video data). A request carrying the key anywhere
+ * else is refused, so it can never read tokens, change channels or settings.
+ * Unset or shorter than 32 characters, the key does nothing at all.
+ */
+const READ_KEY = String(config.JARVIS_READ_KEY || '').trim();
+const READ_KEY_ON = READ_KEY.length >= 32;
+const READ_KEY_PATHS = new Set([
+  '/api/analytics',
+  '/api/videos',
+  '/api/channels',
+  '/api/estimates',
+  '/api/live-pace',
+  '/api/live-status',
+  '/api/sync/status',
+]);
+
+/** Constant time, and the length of the key doesn't leak either. */
+function sameKey(a, b) {
+  const hash = (v) => crypto.createHash('sha256').update(String(v)).digest();
+  return crypto.timingSafeEqual(hash(a), hash(b));
+}
+
+/** 'allow', 'wrong-key' or 'not-allowed' when a key is presented; null when it plays no part. */
+function readKeyAccess(req) {
+  if (!READ_KEY_ON) return null;
+  const header = req.headers.authorization;
+  const match = typeof header === 'string' ? header.match(/^Bearer\s+(\S+)\s*$/i) : null;
+  if (!match) return null;
+  if (!sameKey(match[1], READ_KEY)) return 'wrong-key';
+  const path = req.path.length > 1 ? req.path.replace(/\/+$/, '') : req.path;
+  return req.method === 'GET' && READ_KEY_PATHS.has(path) ? 'allow' : 'not-allowed';
+}
+
 function middleware(req, res, next) {
+  const key = readKeyAccess(req);
+  if (key === 'allow') return next();
+  if (key === 'wrong-key') return res.status(401).json({ error: 'Invalid key' });
+  if (key === 'not-allowed') return res.status(403).json({ error: 'This key only reads analytics' });
+
   if (!AUTH_REQUIRED) return next();
   if (OPEN_PATHS.some((p) => req.path === p || req.path.startsWith(`${p}/`))) return next();
   if (currentUser(req)) return next();
